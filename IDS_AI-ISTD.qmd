@@ -2,7 +2,7 @@
 ---
 title: "IDS_AI-ISTD"
 subtitle: "Система обнаружения вторжений на основе анализа сетевого трафика"
-author: "d.toykina, p.plyuvkov, a.oglodin, a.kulikov"
+author: "d.toykina, p.pluvkov, a.oglodin, a.kulikov, v.pastukhov"
 format: revealjs
 editor: visual
 ---

@@ -1,0 +1,58 @@
+# --------------------
+# R temporary files
+# --------------------
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj.user
+
+# --------------------
+# RStudio files
+# --------------------
+.Rproj.user/
+*.Rproj
+
+# --------------------
+# Quarto / knitr cache
+# --------------------
+_cache/
+*_cache/
+*_files/
+
+# --------------------
+# Quarto output folders
+# --------------------
+_site/
+_quarto/
+
+# --------------------
+# Logs
+# --------------------
+*.log
+
+# --------------------
+# OS files
+# --------------------
+.DS_Store
+Thumbs.db
+
+# --------------------
+# Environment files
+# --------------------
+.Renviron
+.Rprofile
+
+# --------------------
+# Data files (если большие)
+# --------------------
+data/
+datasets/
+*.csv
+*.parquet
+*.rds
+
+# --------------------
+# Python (если случайно используется)
+# --------------------
+pycache/
+*.pyc

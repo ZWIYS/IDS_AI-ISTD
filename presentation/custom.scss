@@ -1,0 +1,30 @@
+/*-- scss:defaults --*/
+/* основной цвет */
+$body-bg: #0f172a;
+$body-color: #e5e7eb;
+
+/* акцент */
+$link-color: #38bdf8;
+
+/*-- scss:rules --*/
+/* заголовки */
+.reveal h1, .reveal h2, .reveal h3 {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+/* списки */
+.reveal ul li {
+  margin-bottom: 8px;
+}
+
+/* блоки */
+.reveal section {
+  padding-left: 40px;
+  padding-right: 40px;
+}
+
+/* код */
+code {
+  color: #22c55e;
+}

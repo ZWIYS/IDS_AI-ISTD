@@ -6,10 +6,10 @@
 <script src="IDS_AI-ISTD_files/libs/quarto-html/tippy.umd.min.js"></script>
 <link href="IDS_AI-ISTD_files/libs/quarto-html/tippy.css" rel="stylesheet">
 <link href="IDS_AI-ISTD_files/libs/quarto-html/light-border.css" rel="stylesheet">
-<link href="IDS_AI-ISTD_files/libs/quarto-html/quarto-syntax-highlighting-dark-4d9afe2b8d18ee9fa5d0d57b5ed4214d.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
-  <meta name="generator" content="quarto-1.8.27">
+<link href="IDS_AI-ISTD_files/libs/quarto-html/quarto-syntax-highlighting-dark-01cd1b811f5dd737db724e0a30a26b71.css" rel="stylesheet" id="quarto-text-highlighting-styles"><meta charset="utf-8">
+  <meta name="generator" content="quarto-1.9.33">
 
-  <meta name="author" content="d.toykina, p.pluvkov, a.oglodin, a.kulikov, v.pastukhov">
+  <meta name="author" content="Плювков П., Куликов А., Оглодин А., Пастухов В., Тойкина Д.">
   <title>IDS_AI-ISTD</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,6 +17,9 @@
   <link rel="stylesheet" href="IDS_AI-ISTD_files/libs/revealjs/dist/reset.css">
   <link rel="stylesheet" href="IDS_AI-ISTD_files/libs/revealjs/dist/reveal.css">
   <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
     code{white-space: pre-wrap;}
     span.smallcaps{font-variant: small-caps;}
     div.columns{display: flex; gap: min(4vw, 1.5em);}
@@ -29,7 +32,7 @@
       vertical-align: middle;
     }
   </style>
-  <link rel="stylesheet" href="IDS_AI-ISTD_files/libs/revealjs/dist/theme/quarto-387fd6d4cd3422da30fb52aee2973f2e.css">
+  <link rel="stylesheet" href="IDS_AI-ISTD_files/libs/revealjs/dist/theme/quarto-2569622aee237913581f72dec657b9ff.css">
   <link href="IDS_AI-ISTD_files/libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
   <link href="IDS_AI-ISTD_files/libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
   <link href="IDS_AI-ISTD_files/libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
@@ -133,7 +136,7 @@
 <div class="quarto-title-authors">
 <div class="quarto-title-author">
 <div class="quarto-title-author-name">
-d.toykina, p.pluvkov, a.oglodin, a.kulikov, v.pastukhov 
+Плювков П., Куликов А., Оглодин А., Пастухов В., Тойкина Д. 
 </div>
 </div>
 </div>
@@ -179,7 +182,6 @@ d.toykina, p.pluvkov, a.oglodin, a.kulikov, v.pastukhov
 <p>Источники данных, используемые в системе:</p>
 <ul>
 <li>NetFlow — информация о сетевых потоках</li>
-<li>Zeek logs — события сетевого мониторинга</li>
 <li>PCAP — захваченные сетевые пакеты</li>
 <li>системные журналы</li>
 </ul>
@@ -211,9 +213,34 @@ d.toykina, p.pluvkov, a.oglodin, a.kulikov, v.pastukhov
 <li>общий объем переданных данных</li>
 <li>длительность соединений</li>
 <li>используемые порты</li>
-<li>частота обращений к ресурсам</li>
+<li>частота обращений к ресурсам Эти признаки используются в дальнейшем для обнаружения аномалий.</li>
 </ul>
-<p>Эти признаки используются в дальнейшем для обнаружения аномалий.</p>
+</section>
+<section id="пример-распределения-сетевого-трафика-гистограмма" class="slide level2">
+<h2>Пример распределения сетевого трафика (гистограмма)</h2>
+<p>Ниже представлен пример гистограммы, иллюстрирующей распределение объёма переданных данных по соединениям (на синтетических данных).</p>
+<div id="e805f85f" class="cell" data-execution_count="1">
+<div class="cell-output cell-output-display">
+<div>
+<figure>
+<p><img data-src="IDS_AI-ISTD_files/figure-revealjs/cell-2-output-1.png" width="758" height="374"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="пример-выявления-аномалий-методом-isolation-forest" class="slide level2">
+<h2>Пример выявления аномалий методом Isolation Forest</h2>
+<p>На данном графике показаны “нормальные” точки и аномалии, сгенерированные с помощью модели Isolation Forest (на синтетических данных).</p>
+<div id="5589a1ce" class="cell" data-execution_count="2">
+<div class="cell-output cell-output-display">
+<div>
+<figure>
+<p><img data-src="IDS_AI-ISTD_files/figure-revealjs/cell-3-output-1.png" width="662" height="470"></p>
+</figure>
+</div>
+</div>
+</div>
 </section>
 <section id="машинное-обучение" class="slide level2">
 <h2>Машинное обучение</h2>
@@ -230,11 +257,24 @@ d.toykina, p.pluvkov, a.oglodin, a.kulikov, v.pastukhov
 <p>Для представления результатов используется интерактивный dashboard.</p>
 <p>Dashboard позволяет:</p>
 <ul>
-<li>отображать статистику сетевого трафика</li>
-<li>показывать обнаруженные аномалии</li>
-<li>отслеживать подозрительные IP-адреса</li>
-<li>анализировать динамику трафика во времени</li>
+<li><p>отображать статистику сетевого трафика</p></li>
+<li><p>показывать обнаруженные аномалии</p></li>
+<li><p>отслеживать подозрительные IP-адреса</p></li>
+<li><p>анализировать динамику трафика во времени</p></li>
 </ul>
+</section>
+<section id="динамика-сетевого-трафика-во-времени" class="slide level2">
+<h2>Динамика сетевого трафика во времени</h2>
+<p>Пример графика временного ряда, отображающего изменение объёма трафика и возможные всплески, связанные с атаками.</p>
+<div id="f715d200" class="cell" data-execution_count="3">
+<div class="cell-output cell-output-display">
+<div>
+<figure>
+<p><img data-src="IDS_AI-ISTD_files/figure-revealjs/cell-4-output-1.png" width="855" height="374"></p>
+</figure>
+</div>
+</div>
+</div>
 </section>
 <section id="примеры-обнаруживаемых-угроз" class="slide level2">
 <h2>Примеры обнаруживаемых угроз</h2>
@@ -259,7 +299,6 @@ d.toykina, p.pluvkov, a.oglodin, a.kulikov, v.pastukhov
 </ul>
 <p>В дальнейшем систему можно расширить:</p>
 <ul>
-<li>обработкой данных в реальном времени</li>
 <li>интеграцией с системами мониторинга безопасности</li>
 <li>использованием более сложных моделей машинного обучения</li>
 </ul>

@@ -5,6 +5,8 @@
 .RData
 .Ruserdata
 *.Rproj.user
+*.pcap
+
 
 # --------------------
 # RStudio files

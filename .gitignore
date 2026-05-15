@@ -1,3 +1,4 @@
 pcap/*
 *.pcap
 *.DS_Store
+/data/*

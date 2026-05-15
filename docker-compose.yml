@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  # 1. Сервис для запуска ML-конвейера (запускается по требованию и завершается)
+  pipeline:
+    build: .
+    container_name: ids_pipeline
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./alerts:/app/alerts
+      - ./scripts:/app/scripts
+    # По умолчанию запускаем весь конвейер
+    command: ["Rscript", "run_pipeline.R"]
+
+  # 2. Сервис для дашборда (работает постоянно в фоне)
+  dashboard:
+    build: .
+    container_name: ids_dashboard
+    ports:
+      - "4321:4321"
+    volumes:
+      - ./data:/app/data          # PCAP: data/pcap/uploaded/ (UI или import_pcaps.sh)
+      - ./models:/app/models
+      - ./alerts:/app/alerts
+    # Важно: host='0.0.0.0' разрешает доступ к Shiny снаружи контейнера
+    command: ["Rscript", "-e", "shiny::runApp('R/05_dashboard.R', port=4321, host='0.0.0.0')"]
+    restart: unless-stopped

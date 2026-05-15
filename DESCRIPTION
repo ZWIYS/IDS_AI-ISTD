@@ -18,6 +18,7 @@ Authors@R: c(
            email = "dtoykina@mail.ru", 
            role = "aut")
 )
+
 Description: Batch IDS pipeline: Zeek PCAP analysis, feature engineering,
     Isolation Forest anomaly detection, rule-based attack classification.
 License: MIT + file LICENSE

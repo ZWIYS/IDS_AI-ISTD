@@ -20,10 +20,12 @@ safe_num <- function(x) {
   v
 }
 
-# Безопасный max: пустой/все NA → default
+# Безопасный max: пустой/все NA → default (всегда double — для data.table j, by=)
 safe_max <- function(x, default = 0) {
+  x <- suppressWarnings(as.numeric(x))
   x <- x[is.finite(x)]
-  if (!length(x)) default else max(x)
+  if (!length(x)) return(as.numeric(default))
+  as.numeric(max(x))
 }
 
 # Энтропия Шеннона строки (для DGA-подобных доменов и SNI)

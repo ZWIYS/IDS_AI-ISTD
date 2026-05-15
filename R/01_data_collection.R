@@ -70,9 +70,9 @@ enrich_dns <- function(zeek_dir) {
   d <- read_zeek_tsv(file.path(zeek_dir, "dns.log"))
   if (is.null(d) || !"uid" %in% names(d)) return(NULL)
   q <- as.character(safe_col(d, "query", ""))
-  d[, query_length  := nchar(q %||% "")]
+  d[, query_length  := as.numeric(nchar(q %||% ""))]
   d[, query_entropy := shannon_entropy_v(q)]
-  d[, num_labels    := stringi::stri_count_fixed(q, ".") + 1L]
+  d[, num_labels    := as.numeric(stringi::stri_count_fixed(q, ".") + 1L)]
   d[, .(
     query_length  = safe_max(query_length),
     query_entropy = safe_max(query_entropy),
@@ -85,8 +85,8 @@ enrich_http <- function(zeek_dir) {
   if (is.null(d) || !"uid" %in% names(d)) return(NULL)
   uri <- as.character(safe_col(d, "uri", ""))
   ua  <- as.character(safe_col(d, "user_agent", ""))
-  d[, uri_length := nchar(uri %||% "")]
-  d[, ua_length  := nchar(ua  %||% "")]
+  d[, uri_length := as.numeric(nchar(uri %||% ""))]
+  d[, ua_length  := as.numeric(nchar(ua  %||% ""))]
   d[, status_n   := safe_num(safe_col(d, "status_code", 0))]
   d[, method_c   := as.character(safe_col(d, "method", NA))]
   d[, .(
@@ -101,7 +101,7 @@ enrich_ssl <- function(zeek_dir) {
   d <- read_zeek_tsv(file.path(zeek_dir, "ssl.log"))
   if (is.null(d) || !"uid" %in% names(d)) return(NULL)
   sni <- as.character(safe_col(d, "server_name", ""))
-  d[, ssl_sni_length  := nchar(sni %||% "")]
+  d[, ssl_sni_length  := as.numeric(nchar(sni %||% ""))]
   d[, ssl_sni_entropy := shannon_entropy_v(sni)]
   d[, .(
     ssl_sni_length  = safe_max(ssl_sni_length),

@@ -17,6 +17,7 @@ Authors@R: c(
     person("D.V.", "Toykina",
         email = "dtoykina@mail.ru",
         role = "aut")
+    )
 Description: Provides an intrusion detection pipeline for IoT traffic
     analysis, including Zeek-based PCAP parsing, feature engineering,
     anomaly detection using Isolation Forest, and rule-based attack

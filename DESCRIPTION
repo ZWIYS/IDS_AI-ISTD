@@ -1,7 +1,7 @@
 Package: idsAiIstd
 Title: IoT IDS — Intrusion Detection Pipeline
 Version: 0.1.0
-Authors@R: person("IDS", "AI-ISTD", email = "ids-ai-istd@example.com", role = c("aut", "cre"))
+Authors@R: person("Куликов А.А., Оглодин А.А., Пастухов В.В., Плювков П.С., Тойкина Д.В.", role = c("aut", "cre"))
 Description: Batch IDS pipeline: Zeek PCAP analysis, feature engineering,
     Isolation Forest anomaly detection, rule-based attack classification.
 License: MIT + file LICENSE

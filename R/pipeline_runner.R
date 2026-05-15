@@ -12,10 +12,10 @@ STAGE_MAP <- list(
 run_ids_pipeline <- function(
   stages       = c("data", "features", "train", "detect"),
   pcap_dir     = NULL,
-  reset_alerts = TRUE
+  reset_alerts = TRUE  # в Shiny: FALSE, если «Заменить ранее загруженные» выключен
 ) {
   r_dir <- file.path(PROJECT_ROOT, "R")
-  if (reset_alerts && "detect" %in% stages && file.exists(PATHS$alerts_file))
+  if (isTRUE(reset_alerts) && "detect" %in% stages && file.exists(PATHS$alerts_file))
     writeLines(character(), PATHS$alerts_file)
 
   for (name in stages) {

@@ -92,14 +92,14 @@ classify_attacks <- function(dt, rules = DETECT_PARAMS$rules) {
 classify_attack <- classify_attacks
 
 # --- Запись алёртов в JSONL ---------------------------------------------------
-send_alerts <- function(alerts) {
+send_alerts <- function(alerts, append = FALSE) {
   if (!nrow(alerts)) return(invisible(0L))
   out <- PATHS$alerts_file
   dir.create(dirname(out), recursive = TRUE, showWarnings = FALSE)
   rows <- lapply(seq_len(nrow(alerts)), function(i) {
     jsonlite::toJSON(as.list(alerts[i]), auto_unbox = TRUE)
   })
-  write(paste(rows, collapse = "\n"), file = out, append = file.exists(out))
+  write(paste(rows, collapse = "\n"), file = out, append = isTRUE(append))
   log_info("Wrote %d alert(s) to %s", nrow(alerts), out)
   invisible(nrow(alerts))
 }

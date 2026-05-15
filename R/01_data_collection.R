@@ -128,7 +128,8 @@ process_pcap <- function(pcap_path) {
 
 # --- Главный конвейер ETL ----------------------------------------------------
 run_etl <- function(pcap_dir = PATHS$pcap_dir, out_path = PATHS$dataset) {
-  pcaps <- list.files(pcap_dir, "\\.pcap(\\.gz)?$", full.names = TRUE)
+  pcaps <- list.files(pcap_dir, "\\.(pcap|pcapng)(\\.gz)?$",
+                      full.names = TRUE, ignore.case = TRUE)
   if (!length(pcaps)) stop("No PCAPs in: ", pcap_dir)
   log_info("ETL: %d PCAPs", length(pcaps))
 

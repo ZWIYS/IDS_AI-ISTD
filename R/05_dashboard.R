@@ -127,7 +127,10 @@ server <- function(input, output, session) {
         incProgress(0.2, detail = "Zeek + ML pipeline")
         sink(log_file, type = "output")
         on.exit(sink(), add = TRUE)
-        run_ids_pipeline(pcap_dir = PATHS$pcap_upload_dir)
+        run_ids_pipeline(
+          pcap_dir     = PATHS$pcap_upload_dir,
+          reset_alerts = isTRUE(input$replace_pcaps)
+        )
         "OK"
       }, error = function(e) {
         structure(e$message, class = "error")

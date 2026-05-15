@@ -632,7 +632,3 @@ source("R/utils.R")
 source("R/pcap_upload.R")
 save_uploaded_pcaps(files_df, replace = TRUE)
 ```
-
----
-
-*Документация сгенерирована для репозитория IDS_AI-ISTD, папка `R/`.*

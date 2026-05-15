@@ -39,5 +39,6 @@ COPY DESCRIPTION install_dependencies.R /app/
 RUN Rscript install_dependencies.R
 
 COPY . /app/
+RUN R CMD INSTALL /app
 
 EXPOSE 4321

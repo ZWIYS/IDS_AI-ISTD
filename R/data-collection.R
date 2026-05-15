@@ -1,21 +1,8 @@
 # =============================================================================
-# 01_data_collection.R — БЛОКИ 1+2: Сбор данных + ETL
-# =============================================================================
-# 1) Запуск Zeek по PCAP-файлам (кеш по hash(содержимое), не по имени)
-# 2) Парсинг conn.log + dns.log + http.log + ssl.log
-# 3) Объединение по uid -> одна conn-level запись с DNS/HTTP/SSL атрибутами
-# 4) Нормализация: id.orig_h -> src_ip, id.resp_h -> dst_ip и пр.
-# Результат: data/processed/dataset.parquet
+# data-collection.R — сбор данных и ETL (Zeek + parquet)
 # =============================================================================
 
-local({
-  here <- tryCatch(dirname(sys.frame(1)$ofile), error = function(e) getwd())
-  source(file.path(here, "00_config.R"), chdir = TRUE)
-  source(file.path(here, "utils.R"),     chdir = TRUE)
-})
-ensure_packages(REQUIRED_PKGS)
-
-# --- Запуск Zeek с кешем по содержимому PCAP ---------------------------------
+#' @keywords internal
 run_zeek <- function(pcap_path) {
   pcap_path <- normalizePath(pcap_path, mustWork = TRUE)
   cache_key <- digest::digest(file = pcap_path, algo = "md5")
@@ -41,12 +28,11 @@ run_zeek <- function(pcap_path) {
   out_dir
 }
 
-# --- Загрузка conn.log + переименование Zeek-полей ---------------------------
+#' @keywords internal
 load_conn <- function(zeek_dir) {
   dt <- read_zeek_tsv(file.path(zeek_dir, "conn.log"))
   if (is.null(dt) || !nrow(dt)) return(NULL)
 
-  # Переименуем "точечные" Zeek-поля в plain имена
   ren <- c(
     "id.orig_h" = "src_ip",  "id.orig_p" = "src_port",
     "id.resp_h" = "dst_ip",  "id.resp_p" = "dst_port"
@@ -54,18 +40,18 @@ load_conn <- function(zeek_dir) {
   present <- intersect(names(ren), names(dt))
   if (length(present)) data.table::setnames(dt, present, ren[present])
 
-  num_cols <- c("ts","duration","orig_bytes","resp_bytes","missed_bytes",
-                "orig_pkts","resp_pkts","orig_ip_bytes","resp_ip_bytes",
-                "src_port","dst_port")
+  num_cols <- c("ts", "duration", "orig_bytes", "resp_bytes", "missed_bytes",
+                "orig_pkts", "resp_pkts", "orig_ip_bytes", "resp_ip_bytes",
+                "src_port", "dst_port")
   for (c in intersect(num_cols, names(dt))) dt[, (c) := safe_num(get(c))]
 
-  for (c in c("proto","service","conn_state","history","uid")) {
+  for (c in c("proto", "service", "conn_state", "history", "uid")) {
     if (c %in% names(dt)) dt[, (c) := as.character(get(c))]
   }
   dt
 }
 
-# --- Извлечение DNS/HTTP/SSL атрибутов на уровне uid -------------------------
+#' @keywords internal
 enrich_dns <- function(zeek_dir) {
   d <- read_zeek_tsv(file.path(zeek_dir, "dns.log"))
   if (is.null(d) || !"uid" %in% names(d)) return(NULL)
@@ -80,6 +66,7 @@ enrich_dns <- function(zeek_dir) {
   ), by = uid]
 }
 
+#' @keywords internal
 enrich_http <- function(zeek_dir) {
   d <- read_zeek_tsv(file.path(zeek_dir, "http.log"))
   if (is.null(d) || !"uid" %in% names(d)) return(NULL)
@@ -97,6 +84,7 @@ enrich_http <- function(zeek_dir) {
   ), by = uid]
 }
 
+#' @keywords internal
 enrich_ssl <- function(zeek_dir) {
   d <- read_zeek_tsv(file.path(zeek_dir, "ssl.log"))
   if (is.null(d) || !"uid" %in% names(d)) return(NULL)
@@ -109,6 +97,7 @@ enrich_ssl <- function(zeek_dir) {
   ), by = uid]
 }
 
+#' @keywords internal
 join_uid <- function(conn, aux) {
   if (is.null(aux) || !nrow(aux)) return(conn)
   conn[aux, on = "uid", (setdiff(names(aux), "uid")) :=
@@ -116,17 +105,24 @@ join_uid <- function(conn, aux) {
   conn
 }
 
+#' @keywords internal
 process_pcap <- function(pcap_path) {
-  z   <- run_zeek(pcap_path)
-  dt  <- load_conn(z); if (is.null(dt)) return(NULL)
-  dt  <- join_uid(dt, enrich_dns(z))
-  dt  <- join_uid(dt, enrich_http(z))
-  dt  <- join_uid(dt, enrich_ssl(z))
+  z  <- run_zeek(pcap_path)
+  dt <- load_conn(z)
+  if (is.null(dt)) return(NULL)
+  dt <- join_uid(dt, enrich_dns(z))
+  dt <- join_uid(dt, enrich_http(z))
+  dt <- join_uid(dt, enrich_ssl(z))
   dt[, source_file := basename(pcap_path)]
   dt
 }
 
-# --- Главный конвейер ETL ----------------------------------------------------
+#' ETL: Zeek по PCAP и запись dataset.parquet
+#'
+#' @param pcap_dir Каталог с `.pcap` / `.pcapng`.
+#' @param out_path Путь к выходному parquet.
+#' @return `data.table` (невидимо).
+#' @export
 run_etl <- function(pcap_dir = PATHS$pcap_dir, out_path = PATHS$dataset) {
   pcaps <- list.files(pcap_dir, "\\.(pcap|pcapng)(\\.gz)?$",
                       full.names = TRUE, ignore.case = TRUE)
@@ -135,7 +131,10 @@ run_etl <- function(pcap_dir = PATHS$pcap_dir, out_path = PATHS$dataset) {
 
   parts <- lapply(pcaps, function(p) {
     tryCatch(process_pcap(p),
-             error = function(e) { log_error("Failed %s: %s", basename(p), e$message); NULL })
+             error = function(e) {
+               log_error("Failed %s: %s", basename(p), e$message)
+               NULL
+             })
   })
   out <- data.table::rbindlist(parts, fill = TRUE)
   if (!nrow(out)) stop("ETL produced zero rows")
@@ -144,6 +143,3 @@ run_etl <- function(pcap_dir = PATHS$pcap_dir, out_path = PATHS$dataset) {
   log_info("ETL done: %d rows -> %s", nrow(out), out_path)
   invisible(out)
 }
-
-# Если файл запущен напрямую — выполнить
-if (sys.nframe() == 0L) run_etl()

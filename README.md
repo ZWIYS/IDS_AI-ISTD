@@ -34,7 +34,7 @@
   Убедиться в наличии Zeek в path вашей системы!
   Первый запуск без PCAP упадёт на стадии data — нужен хотя бы один .pcap в 
   ```R
-  data/pcap/
+  R Проект/data/pcap/
   ```
 2. Установить пакет с github
   ```R
@@ -43,12 +43,15 @@
   ```R
   remotes::install_github("ZWIYS/IDS_AI-ISTD")
   ```
-3. Подключить пакет в R
+3. Подключить пакет в R и указать путь
   ```R
   library(idsAiIstd)
   ```
+  ```R
+  init_ids_config("/Путь к R Проекту")
+  ```
 4. Добавление первого .pcap и запуск пайплайна
-  Положить .pcap файл в /../IDS_AI-ISTD/data/pcap/
+  Положить .pcap файл в /Проект R/data/pcap/
   ```R
   run_ids_pipeline()
   ```
@@ -167,7 +170,7 @@ Zeek используется как **парсер PCAP → структури�
 2. `rsample::initial_split` 80/20; на train строится `recipes::recipe` (медианная импутация числовых, факторизация строк, `step_novel` для неизвестных уровней).
 3. Обучается `isotree::isolation.forest` с параметрами из `MODEL_PARAMS`.
 4. Порог аномальности — **99-й перцентиль** скоров на validation (`threshold_quant = 0.99`).
-5. Сохраняются `**iforest.rds`** и `**model_meta.rds**` (порог, prep recipe, имена признаков, summary скоров, `trained_at`).
+5. Сохраняются `**iforest.rds`** и `**model_meta.rds`** (порог, prep recipe, имена признаков, summary скоров, `trained_at`).
 
 ### 2.5. Стадия `detect` (`detect`)
 
@@ -262,7 +265,7 @@ Zeek используется как **парсер PCAP → структури�
 
 `**FEATURE_DEFAULTS`** — словарь значений по умолчанию для всех числовых признаков.
 
-`**NUM_FEATURES**` — имена числовых признаков (равны `names(FEATURE_DEFAULTS)`):
+`**NUM_FEATURES`** — имена числовых признаков (равны `names(FEATURE_DEFAULTS)`):
 
 - Сессия: `duration`, `orig_bytes`, `resp_bytes`, `missed_bytes`, `orig_pkts`, `resp_pkts`, `total_bytes`, `bytes_per_sec`, `pkt_ratio`, `history_length`
 - DNS/HTTP/SSL: `query_length`, `query_entropy`, `num_labels`, `uri_length`, `ua_length`, `http_status_code`, `ssl_sni_length`, `ssl_sni_entropy`

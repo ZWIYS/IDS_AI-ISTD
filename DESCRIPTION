@@ -1,26 +1,28 @@
 Package: idsAiIstd
-Title: IoT IDS — Intrusion Detection Pipeline
+Title: IoT Intrusion Detection Pipeline
 Version: 0.1.0
 Authors@R: c(
-    person("А.А.", "Куликов", 
-           email = "aa_kylukov@vk.com", 
+    person("A.A.", "Kulikov",
+           email = "aa_kulikov@vk.com",
            role = c("aut", "cre")),
-    person("А.А.", "Оглодин", 
-           email = "artem.bmx661@gmail.com", 
+    person("A.A.", "Oglodin",
+           email = "artem.bmx661@gmail.com",
            role = "aut"),
-    person("В.В.", "Пастухов", 
-           email = "10131120@mail.ru", 
+    person("V.V.", "Pastukhov",
+           email = "10131120@mail.ru",
            role = "aut"),
-    person("П.С.", "Плювков", 
-           email = "ppluvkov@gmail.com", 
+    person("P.S.", "Plyuvkov",
+           email = "ppluvkov@gmail.com",
            role = "aut"),
-    person("Д.В.", "Тойкина", 
-           email = "dtoykina@mail.ru", 
+    person("D.V.", "Toykina",
+           email = "dtoykina@mail.ru",
            role = "aut")
 )
 
-Description: Batch IDS pipeline: Zeek PCAP analysis, feature engineering,
-    Isolation Forest anomaly detection, rule-based attack classification.
+Description: Provides an intrusion detection pipeline for IoT traffic
+    analysis, including Zeek-based PCAP parsing, feature engineering,
+    anomaly detection using Isolation Forest, and rule-based attack
+    classification.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends:
@@ -34,9 +36,7 @@ Imports:
     stringi,
     isotree,
     recipes,
-    rsample,
-    stats,
-    utils
+    rsample
 Suggests:
     shiny,
     DT,

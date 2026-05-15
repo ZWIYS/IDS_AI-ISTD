@@ -1,0 +1,25 @@
+Package: ids-ai-istd
+Title: IoT IDS — Intrusion Detection Pipeline
+Version: 0.1.0
+Authors@R: person("IDS AI-ISTD", role = "cre")
+Description: Batch IDS pipeline: Zeek PCAP analysis, feature engineering,
+    Isolation Forest anomaly detection, rule-based attack classification.
+License: MIT
+Encoding: UTF-8
+Depends:
+    R (>= 4.2.0)
+Imports:
+    data.table,
+    arrow,
+    digest,
+    processx,
+    jsonlite,
+    stringi,
+    isotree,
+    recipes,
+    rsample
+Suggests:
+    shiny,
+    DT,
+    plotly,
+    bslib

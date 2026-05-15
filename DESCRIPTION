@@ -3,22 +3,20 @@ Title: IoT Intrusion Detection Pipeline
 Version: 0.1.0
 Authors@R: c(
     person("A.A.", "Kulikov",
-           email = "aa_kulikov@vk.com",
-           role = c("aut", "cre")),
+        email = "aa_kulikov@vk.com",
+        role = c("aut", "cre")),
     person("A.A.", "Oglodin",
-           email = "artem.bmx661@gmail.com",
-           role = "aut"),
+        email = "artem.bmx661@gmail.com",
+        role = "aut"),
     person("V.V.", "Pastukhov",
-           email = "10131120@mail.ru",
-           role = "aut"),
+        email = "10131120@mail.ru",
+        role = "aut"),
     person("P.S.", "Plyuvkov",
-           email = "ppluvkov@gmail.com",
-           role = "aut"),
+        email = "ppluvkov@gmail.com",
+        role = "aut"),
     person("D.V.", "Toykina",
-           email = "dtoykina@mail.ru",
-           role = "aut")
-)
-
+        email = "dtoykina@mail.ru",
+        role = "aut")
 Description: Provides an intrusion detection pipeline for IoT traffic
     analysis, including Zeek-based PCAP parsing, feature engineering,
     anomaly detection using Isolation Forest, and rule-based attack
@@ -36,7 +34,9 @@ Imports:
     stringi,
     isotree,
     recipes,
-    rsample
+    rsample,
+    stats,
+    utils
 Suggests:
     shiny,
     DT,

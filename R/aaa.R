@@ -11,5 +11,5 @@ utils::globalVariables(c(
   "uri_length", "ua_length", "http_status_code", "ssl_sni_length", "ssl_sni_entropy",
   "bytes_5min", "data_volume_change", "prev_bytes",
   "attack_score", "attack_type", "anomaly_score", "is_anomaly",
-  "attack_type", "service", "source_file", "proto"
+  "attack_type", "service", "source_file", "proto", "alert_id"
 ))

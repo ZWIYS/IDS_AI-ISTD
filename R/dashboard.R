@@ -26,7 +26,133 @@ load_alerts <- function() {
   lines <- readLines(PATHS$alerts_file, warn = FALSE)
   lines <- lines[nzchar(lines)]
   if (!length(lines)) return(data.table::data.table())
-  data.table::rbindlist(lapply(lines, jsonlite::fromJSON), fill = TRUE)
+  dt <- data.table::rbindlist(lapply(lines, jsonlite::fromJSON), fill = TRUE)
+  dt[, alert_id := seq_len(.N)]
+  dt
+}
+
+#' @keywords internal
+.alert_card_css <- function() {
+  shiny::tags$style(shiny::HTML("
+    .alert-list { max-height: 520px; overflow-y: auto; padding-right: 4px; }
+    .alert-card {
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+      background: #fff;
+    }
+    .alert-card:hover { border-color: #3498db; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+    .alert-card.active { border-color: #2c3e50; box-shadow: 0 0 0 2px rgba(44,62,80,.15); }
+    .alert-card .atype { font-weight: 600; font-size: 0.95rem; }
+    .alert-card .meta { font-size: 0.8rem; color: #6c757d; margin-top: 4px; }
+    .alert-detail-section { margin-bottom: 1rem; }
+    .alert-detail-section h6 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #6c757d;
+      margin-bottom: 0.35rem;
+    }
+    .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 0.9rem; }
+    .metric-grid dt { color: #6c757d; font-weight: normal; margin: 0; }
+    .metric-grid dd { margin: 0 0 4px 0; font-weight: 500; }
+    .rule-box, .why-box {
+      background: #f8f9fa;
+      border-left: 3px solid #3498db;
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .why-box { border-left-color: #e67e22; }
+  "))
+}
+
+#' @keywords internal
+.render_alert_card <- function(row, active = FALSE) {
+  meta <- get_attack_meta(row$attack_type)
+  score <- safe_num(row$anomaly_score)
+  shiny::tags$div(
+    class = paste("alert-card", if (active) "active"),
+    onclick = sprintf(
+      "Shiny.setInputValue('alert_click', %d, {priority: 'event'})",
+      as.integer(row$alert_id)
+    ),
+    shiny::tags$div(class = "atype", meta$label),
+    shiny::tags$div(
+      class = "meta",
+      sprintf(
+        "%s → %s:%s · score %s · %s",
+        row$src_ip %||% "—",
+        row$dst_ip %||% "—",
+        row$dst_port %||% "—",
+        format(round(score, 4), nsmall = 4),
+        .fmt_ts(row$ts)
+      )
+    )
+  )
+}
+
+#' @keywords internal
+.render_alert_detail <- function(row) {
+  if (is.null(row) || !length(row)) {
+    return(shiny::tags$div(
+      class = "text-muted p-3",
+      shiny::icon("hand-pointer"),
+      " Выберите алерт в списке слева, чтобы увидеть детали сработки."
+    ))
+  }
+
+  info <- explain_alert(row)
+  metrics_ui <- shiny::tags$dl(
+    class = "metric-grid",
+    lapply(names(info$metrics), function(nm) {
+      shiny::tagList(
+        shiny::tags$dt(nm),
+        shiny::tags$dd(info$metrics[[nm]])
+      )
+    })
+  )
+
+  shiny::tagList(
+    shiny::tags$div(
+      class = "d-flex justify-content-between align-items-start mb-3",
+      shiny::tags$div(
+        shiny::tags$h5(info$attack_label, class = "mb-1"),
+        shiny::tags$span(
+          class = "badge bg-secondary",
+          as.character(row$attack_type %||% "—")
+        ),
+        shiny::tags$span(
+          class = "badge bg-danger ms-1",
+          paste0("score ", format(round(safe_num(row$anomaly_score), 4), nsmall = 4))
+        )
+      )
+    ),
+    shiny::tags$div(
+      class = "alert-detail-section",
+      shiny::tags$h6("Описание атаки"),
+      shiny::tags$p(info$description, class = "mb-0")
+    ),
+    shiny::tags$div(
+      class = "alert-detail-section",
+      shiny::tags$h6("Правило детектирования"),
+      shiny::tags$div(class = "rule-box", info$rule_text)
+    ),
+    shiny::tags$div(
+      class = "alert-detail-section",
+      shiny::tags$h6("Почему помечено так"),
+      shiny::tags$div(class = "why-box", info$why)
+    ),
+    shiny::tags$div(
+      class = "alert-detail-section",
+      shiny::tags$h6("Параметры сессии"),
+      metrics_ui
+    )
+  )
 }
 
 #' UI и server Shiny-приложения IDS
@@ -39,6 +165,7 @@ ids_dashboard_app <- function() {
   ui <- bslib::page_sidebar(
     title = "IoT IDS — Dashboard",
     theme = bslib::bs_theme(bootswatch = "flatly"),
+    .alert_card_css(),
     sidebar = bslib::sidebar(
       width = 380,
       bslib::card(
@@ -73,14 +200,31 @@ ids_dashboard_app <- function() {
       bslib::nav_panel("Атаки во времени",     plotly::plotlyOutput("ts",   height = "360px")),
       bslib::nav_panel("Топ src_ip",           plotly::plotlyOutput("topip", height = "360px"))
     ),
-    bslib::card(bslib::card_header("Алерты"), DT::DTOutput("alerts_tbl"))
+    bslib::card(
+      bslib::card_header("Алерты"),
+      bslib::navset_card_tab(
+        bslib::nav_panel(
+          "Карточки",
+          bslib::layout_columns(
+            col_widths = c(4, 8),
+            shiny::uiOutput("alert_cards"),
+            bslib::card(
+              bslib::card_header("Детали сработки"),
+              shiny::uiOutput("alert_detail")
+            )
+          )
+        ),
+        bslib::nav_panel("Таблица", DT::DTOutput("alerts_tbl"))
+      )
+    )
   )
 
   server <- function(input, output, session) {
     rv <- shiny::reactiveValues(
       scored = load_scored(),
       alerts = load_alerts(),
-      pipeline_log = ""
+      pipeline_log = "",
+      selected_alert_id = NULL
     )
     pipeline_busy <- shiny::reactiveVal(FALSE)
 
@@ -166,7 +310,58 @@ ids_dashboard_app <- function() {
       if (!is.null(input$score_min)) {
         a <- a[anomaly_score >= input$score_min]
       }
+      if (nrow(a) && "ts" %in% names(a)) {
+        data.table::setorder(a, -ts)
+      }
       a
+    })
+
+    shiny::observeEvent(filtered_alerts(), {
+      a <- filtered_alerts()
+      if (!nrow(a)) {
+        rv$selected_alert_id <- NULL
+        return()
+      }
+      if (is.null(rv$selected_alert_id) ||
+          !(rv$selected_alert_id %in% a$alert_id)) {
+        rv$selected_alert_id <- a$alert_id[1L]
+      }
+    }, ignoreNULL = FALSE)
+
+    shiny::observeEvent(input$alert_click, {
+      shiny::req(input$alert_click)
+      rv$selected_alert_id <- as.integer(input$alert_click)
+    })
+
+    selected_alert_row <- shiny::reactive({
+      a <- filtered_alerts()
+      if (!nrow(a) || is.null(rv$selected_alert_id)) return(NULL)
+      row <- a[alert_id == rv$selected_alert_id]
+      if (!nrow(row)) return(NULL)
+      as.list(row[1L])
+    })
+
+    output$alert_cards <- shiny::renderUI({
+      a <- filtered_alerts()
+      if (!nrow(a)) {
+        return(shiny::tags$div(class = "text-muted p-2", "Нет алертов по выбранным фильтрам"))
+      }
+      shiny::tagList(
+        shiny::tags$div(class = "text-muted small mb-2", sprintf("%d алерт(ов)", nrow(a))),
+        shiny::tags$div(
+          class = "alert-list",
+          lapply(seq_len(nrow(a)), function(i) {
+            .render_alert_card(
+              a[i],
+              active = identical(a$alert_id[i], rv$selected_alert_id)
+            )
+          })
+        )
+      )
+    })
+
+    output$alert_detail <- shiny::renderUI({
+      .render_alert_detail(selected_alert_row())
     })
 
     output$n_sessions <- shiny::renderText(format(nrow(rv$scored), big.mark = " "))
@@ -211,12 +406,21 @@ ids_dashboard_app <- function() {
       cols <- intersect(c("ts", "src_ip", "src_port", "dst_ip", "dst_port",
                           "proto", "attack_type", "attack_score", "anomaly_score",
                           "duration", "orig_bytes", "resp_bytes",
-                          "conn_count_5min", "dest_port_distinct"),
+                          "conn_count_5min", "dest_port_distinct", "unique_dst_ip"),
                         names(a))
       DT::datatable(a[, cols, with = FALSE],
                     options = list(pageLength = 25, order = list(list(0, "desc"))),
-                    rownames = FALSE) |>
+                    rownames = FALSE,
+                    selection = "single") |>
         DT::formatRound("anomaly_score", 4)
+    })
+
+    shiny::observeEvent(input$alerts_tbl_rows_selected, {
+      sel <- input$alerts_tbl_rows_selected
+      a <- filtered_alerts()
+      if (length(sel) == 1L && nrow(a) >= sel) {
+        rv$selected_alert_id <- a$alert_id[sel]
+      }
     })
   }
 

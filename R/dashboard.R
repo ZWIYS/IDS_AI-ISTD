@@ -19,6 +19,98 @@ load_scored <- function() {
 }
 
 #' @keywords internal
+load_model_meta <- function() {
+  .load_model_meta()
+}
+
+#' @keywords internal
+.attack_palette <- function(types) {
+  cols <- c(
+    ddos = "#e74c3c", port_scan = "#9b59b6", exfiltration = "#c0392b",
+    botnet = "#8e44ad", dos = "#d35400", dns_anomaly = "#2980b9",
+    http_anomaly = "#16a085", ssl_anomaly = "#27ae60",
+    traffic_spike = "#f39c12", proxy_tunnel = "#7f8c8d",
+    ml_anomaly = "#95a5a6"
+  )
+  out <- cols[types]
+  out[is.na(out)] <- "#bdc3c7"
+  out
+}
+
+#' @keywords internal
+.pipeline_console_css <- function() {
+  shiny::tags$style(shiny::HTML("
+    .pipeline-console-wrap { margin-top: 8px; }
+    .pipeline-console-toolbar {
+      display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
+    }
+    .pipeline-console {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+      border-radius: 6px;
+      padding: 10px 12px;
+      max-height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .pipeline-console .log-line { margin: 0 0 2px 0; }
+    .pipeline-console .log-err { color: #f48771; }
+    .pipeline-console .log-warn { color: #dcdcaa; }
+    .pipeline-console .log-ok { color: #4ec9b0; }
+    .pipeline-console .log-stage { color: #569cd6; font-weight: 600; }
+    .pipeline-console .log-muted { color: #858585; }
+    .pipeline-console-empty { color: #858585; font-style: italic; }
+  "))
+}
+
+#' @keywords internal
+.format_console_line <- function(ln) {
+  cls <- "log-line"
+  if (grepl("^ERROR", ln, ignore.case = TRUE)) {
+    cls <- paste(cls, "log-err")
+  } else if (grepl("WARNING|WARN", ln, ignore.case = TRUE)) {
+    cls <- paste(cls, "log-warn")
+  } else if (grepl("Готово|^OK$|complete|done in", ln, ignore.case = TRUE)) {
+    cls <- paste(cls, "log-ok")
+  } else if (grepl("^==== STAGE:", ln)) {
+    cls <- paste(cls, "log-stage")
+  } else if (grepl("^Запуск", ln)) {
+    cls <- paste(cls, "log-muted")
+  }
+  shiny::tags$div(class = cls, ln)
+}
+
+#' @keywords internal
+.render_pipeline_console <- function(log_text, filter = "all") {
+  if (!nzchar(log_text %||% "")) {
+    return(shiny::tags$div(
+      class = "pipeline-console pipeline-console-empty",
+      "Консоль готова. Запустите анализ PCAP — здесь появится пошаговый лог Zeek и ML."
+    ))
+  }
+  lines <- strsplit(log_text, "\n", fixed = TRUE)[[1]]
+  lines <- lines[nzchar(lines)]
+  if (filter == "errors") {
+    lines <- lines[grepl("ERROR|ошибк", lines, ignore.case = TRUE)]
+    if (!length(lines)) {
+      return(shiny::tags$div(
+        class = "pipeline-console pipeline-console-empty",
+        "Ошибок в текущем логе нет."
+      ))
+    }
+  }
+  shiny::tags$div(
+    id = "pipeline_console",
+    class = "pipeline-console",
+    lapply(lines, .format_console_line)
+  )
+}
+
+#' @keywords internal
 load_alerts <- function() {
   if (!file.exists(PATHS$alerts_file) || file.info(PATHS$alerts_file)$size == 0) {
     return(data.table::data.table())
@@ -166,6 +258,13 @@ ids_dashboard_app <- function() {
     title = "IoT IDS — Dashboard",
     theme = bslib::bs_theme(bootswatch = "flatly"),
     .alert_card_css(),
+    .pipeline_console_css(),
+    shiny::tags$script(shiny::HTML("
+      Shiny.addCustomMessageHandler('idsScrollConsole', function() {
+        var el = document.getElementById('pipeline_console');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    ")),
     sidebar = bslib::sidebar(
       width = 380,
       bslib::card(
@@ -180,7 +279,30 @@ ids_dashboard_app <- function() {
                           class = "btn-primary", icon = shiny::icon("play")),
         shiny::tags$small(class = "text-muted",
                           "Форматы: .pcap, .pcapng, .pcap.gz."),
-        shiny::verbatimTextOutput("pipeline_log"),
+        shiny::tags$div(
+          class = "pipeline-console-wrap",
+          shiny::tags$div(
+            class = "pipeline-console-toolbar",
+            shiny::selectInput(
+              "log_filter", NULL,
+              choices = c(
+                "Весь лог" = "all",
+                "Только ошибки" = "errors"
+              ),
+              width = "140px"
+            ),
+            shiny::actionButton(
+              "clear_log", "Очистить",
+              class = "btn-sm btn-outline-secondary",
+              icon = shiny::icon("eraser")
+            ),
+            shiny::downloadButton(
+              "download_log", "Скачать",
+              class = "btn-sm btn-outline-secondary"
+            )
+          ),
+          shiny::uiOutput("pipeline_console")
+        ),
         shiny::tags$hr(),
         shiny::textOutput("pcap_queue")
       ),
@@ -196,9 +318,26 @@ ids_dashboard_app <- function() {
       bslib::value_box(title = "Уник. src_ip", value = shiny::textOutput("n_src"),      theme = "info")
     ),
     bslib::navset_card_tab(
-      bslib::nav_panel("Распределение score", plotly::plotlyOutput("hist", height = "360px")),
-      bslib::nav_panel("Атаки во времени",     plotly::plotlyOutput("ts",   height = "360px")),
-      bslib::nav_panel("Топ src_ip",           plotly::plotlyOutput("topip", height = "360px"))
+      bslib::nav_panel(
+        "Распределение score",
+        plotly::plotlyOutput("hist", height = "380px")
+      ),
+      bslib::nav_panel(
+        "Аномалии во времени",
+        plotly::plotlyOutput("anom_ts", height = "380px")
+      ),
+      bslib::nav_panel(
+        "Атаки во времени",
+        plotly::plotlyOutput("ts", height = "380px")
+      ),
+      bslib::nav_panel(
+        "Типы атак",
+        plotly::plotlyOutput("attack_mix", height = "380px")
+      ),
+      bslib::nav_panel(
+        "Топ src_ip",
+        plotly::plotlyOutput("topip", height = "380px")
+      )
     ),
     bslib::card(
       bslib::card_header("Алерты"),
@@ -227,12 +366,21 @@ ids_dashboard_app <- function() {
       selected_alert_id = NULL
     )
     pipeline_busy <- shiny::reactiveVal(FALSE)
+    model_meta <- shiny::reactive(load_model_meta())
 
     refresh_dashboard <- function() {
       rv$scored <- load_scored()
       rv$alerts <- load_alerts()
       types <- sort(unique(rv$alerts$attack_type))
       shiny::updateSelectInput(session, "attack_filter", choices = types, selected = types)
+      smax <- max(rv$scored$anomaly_score %||% 1, na.rm = TRUE)
+      if (is.finite(smax) && smax > 0) {
+        shiny::updateSliderInput(
+          session, "score_min",
+          max = round(smax, 2),
+          step = max(0.001, round(smax / 200, 4))
+        )
+      }
     }
 
     shiny::observeEvent(input$refresh, refresh_dashboard(),
@@ -244,9 +392,26 @@ ids_dashboard_app <- function() {
       paste0(length(files), " файл(ов):\n", paste0(" • ", basename(files), collapse = "\n"))
     })
 
-    output$pipeline_log <- shiny::renderText({
-      if (!nzchar(rv$pipeline_log %||% "")) "Лог анализа появится здесь"
-      else rv$pipeline_log
+    output$pipeline_console <- shiny::renderUI({
+      .render_pipeline_console(rv$pipeline_log, input$log_filter %||% "all")
+    })
+
+    shiny::observeEvent(input$clear_log, {
+      rv$pipeline_log <- ""
+    })
+
+    output$download_log <- shiny::downloadHandler(
+      filename = function() {
+        paste0("ids-pipeline-", format(Sys.time(), "%Y%m%d-%H%M%S"), ".log")
+      },
+      content = function(file) {
+        writeLines(rv$pipeline_log %||% "", file, useBytes = TRUE)
+      }
+    )
+
+    shiny::observe({
+      shiny::req(nzchar(rv$pipeline_log %||% ""))
+      session$sendCustomMessage("idsScrollConsole", list())
     })
 
     shiny::observeEvent(input$run_pipeline, {
@@ -263,7 +428,9 @@ ids_dashboard_app <- function() {
       }
 
       pipeline_busy(TRUE)
-      rv$pipeline_log <- "Запуск…\n"
+      rv$pipeline_log <- paste0(
+        "[", format(Sys.time(), "%H:%M:%S"), "] Запуск конвейера IDS…\n"
+      )
       shiny::updateActionButton(session, "run_pipeline", label = "Выполняется…")
 
       shiny::withProgress(message = "Анализ PCAP", value = 0, {
@@ -287,17 +454,46 @@ ids_dashboard_app <- function() {
       })
 
       log_lines <- if (file.exists(log_file)) readLines(log_file, warn = FALSE) else character()
-      rv$pipeline_log <- paste(c(log_lines,
-        if (inherits(result, "error")) paste("ERROR:", result) else "Готово."),
-        collapse = "\n")
+
+      if (inherits(result, "error")) {
+        summary_line <- paste("ERROR:", result)
+      } else {
+        refresh_dashboard()
+        meta <- model_meta()
+        n_al <- nrow(rv$alerts)
+        n_sc <- nrow(rv$scored)
+        n_an <- sum(rv$scored$is_anomaly %||% FALSE, na.rm = TRUE)
+        thr <- if (!is.null(meta)) meta$threshold else NA
+        ml_n <- sum(rv$alerts$attack_type == "ml_anomaly", na.rm = TRUE)
+        summary_line <- sprintf(
+          paste0(
+            "Готово. Сессий: %s, аномалий ML: %s, алертов: %s",
+            " (ML-аномалий: %s). Порог модели: %s"
+          ),
+          format(n_sc, big.mark = " "),
+          format(n_an, big.mark = " "),
+          format(n_al, big.mark = " "),
+          format(ml_n, big.mark = " "),
+          if (is.finite(thr)) format(round(thr, 4), nsmall = 4) else "—"
+        )
+      }
+
+      rv$pipeline_log <- paste(
+        c(rv$pipeline_log, log_lines, summary_line),
+        collapse = "\n"
+      )
       pipeline_busy(FALSE)
       shiny::updateActionButton(session, "run_pipeline", label = "Запустить анализ")
 
       if (inherits(result, "error")) {
         shiny::showNotification(paste("Ошибка:", result), type = "error", duration = NULL)
       } else {
-        shiny::showNotification("Анализ завершён", type = "message")
-        refresh_dashboard()
+        n_al <- nrow(rv$alerts)
+        ml_n <- sum(rv$alerts$attack_type == "ml_anomaly", na.rm = TRUE)
+        shiny::showNotification(
+          sprintf("Анализ завершён: %d алерт(ов), из них ML-аномалий: %d", n_al, ml_n),
+          type = "message"
+        )
       }
     })
 
@@ -373,31 +569,175 @@ ids_dashboard_app <- function() {
       if (!nrow(a)) "0" else format(data.table::uniqueN(a$src_ip), big.mark = " ")
     })
 
+    model_threshold <- shiny::reactive({
+      m <- model_meta()
+      if (is.null(m)) return(NA_real_)
+      as.numeric(m$threshold %||% NA_real_)
+    })
+
     output$hist <- plotly::renderPlotly({
       shiny::req(nrow(rv$scored) > 0)
-      plotly::plot_ly(rv$scored, x = ~anomaly_score, type = "histogram", nbinsx = 60) |>
-        plotly::layout(title = "Распределение anomaly_score",
-                       xaxis = list(title = "score"), yaxis = list(title = "сессий"))
+      s <- rv$scored
+      thr <- model_threshold()
+      normal <- s[is_anomaly != TRUE | is.na(is_anomaly)]
+      anom <- s[is_anomaly == TRUE]
+
+      p <- plotly::plot_ly() |>
+        plotly::add_trace(
+          data = normal, x = ~anomaly_score, type = "histogram",
+          name = "Норма", nbinsx = 50, marker = list(color = "#3498db", opacity = 0.65)
+        ) |>
+        plotly::add_trace(
+          data = anom, x = ~anomaly_score, type = "histogram",
+          name = "Аномалия", nbinsx = 50, marker = list(color = "#e74c3c", opacity = 0.75)
+        )
+
+      n_an <- nrow(anom)
+      pct <- if (nrow(s)) round(100 * n_an / nrow(s), 2) else 0
+      layout_args <- list(
+        title = sprintf(
+          "Распределение anomaly_score (%s сессий, %.2f%% аномалий)",
+          format(nrow(s), big.mark = " "), pct
+        ),
+        barmode = "overlay",
+        xaxis = list(title = "anomaly_score"),
+        yaxis = list(title = "число сессий"),
+        legend = list(orientation = "h", y = 1.12)
+      )
+      if (is.finite(thr)) {
+        layout_args$shapes <- list(list(
+          type = "line", x0 = thr, x1 = thr, y0 = 0, y1 = 1,
+          yref = "paper", line = list(color = "#2c3e50", width = 2, dash = "dash")
+        ))
+        layout_args$annotations <- list(list(
+          x = thr, y = 1, yref = "paper", text = sprintf("порог %.4f", thr),
+          showarrow = FALSE, xanchor = "left", font = list(size = 11)
+        ))
+      }
+      p |>
+        plotly::layout(layout_args) |>
+        plotly::config(displayModeBar = TRUE)
+    })
+
+    output$anom_ts <- plotly::renderPlotly({
+      shiny::req(nrow(rv$scored) > 0, "ts" %in% names(rv$scored))
+      s <- data.table::copy(rv$scored)
+      s[, t := as.POSIXct(safe_num(ts), origin = "1970-01-01", tz = "UTC")]
+      s[, bucket := as.POSIXct(floor(as.numeric(t) / 60) * 60,
+                               origin = "1970-01-01", tz = "UTC")]
+      g <- s[, .(
+        sessions = .N,
+        anomalies = sum(is_anomaly == TRUE, na.rm = TRUE),
+        mean_score = mean(anomaly_score, na.rm = TRUE)
+      ), by = bucket]
+      g[, rate_pct := ifelse(sessions > 0, 100 * anomalies / sessions, 0)]
+
+      plotly::plot_ly(g, x = ~bucket) |>
+        plotly::add_bars(
+          y = ~sessions, name = "Сессий/мин",
+          marker = list(color = "#bdc3c7"),
+          text = ~paste("сессий:", sessions), hoverinfo = "text+x"
+        ) |>
+        plotly::add_trace(
+          y = ~anomalies, type = "scatter", mode = "lines+markers",
+          name = "Аномалий/мин", line = list(color = "#e74c3c", width = 2),
+          text = ~paste("аномалий:", anomalies, "| доля:", round(rate_pct, 1), "%"),
+          hoverinfo = "text+x"
+        ) |>
+        plotly::layout(
+          title = "Динамика сессий и ML-аномалий по минутам",
+          xaxis = list(title = "время (UTC)"),
+          yaxis = list(title = "количество"),
+          legend = list(orientation = "h", y = 1.1)
+        )
     })
 
     output$ts <- plotly::renderPlotly({
       a <- filtered_alerts()
       shiny::req(nrow(a) > 0)
+      a <- data.table::copy(a)
       a[, t := as.POSIXct(safe_num(ts), origin = "1970-01-01", tz = "UTC")]
       a[, bucket := as.POSIXct(floor(as.numeric(t) / 60) * 60,
                                origin = "1970-01-01", tz = "UTC")]
-      g <- a[, .N, by = .(bucket, attack_type)]
-      plotly::plot_ly(g, x = ~bucket, y = ~N, color = ~attack_type, type = "bar") |>
-        plotly::layout(barmode = "stack", xaxis = list(title = "время"),
-                       yaxis = list(title = "алертов/мин"))
+      a[, attack_label := vapply(attack_type, function(tp) {
+        get_attack_meta(tp)$label
+      }, character(1))]
+      g <- a[, .N, by = .(bucket, attack_type, attack_label)]
+      types <- unique(g$attack_type)
+      pal <- .attack_palette(types)
+
+      p <- plotly::plot_ly()
+      for (tp in types) {
+        sub <- g[attack_type == tp]
+        p <- p |>
+          plotly::add_trace(
+            data = sub, x = ~bucket, y = ~N, type = "bar",
+            name = sub$attack_label[1],
+            marker = list(color = pal[tp]),
+            text = ~paste0(attack_label, ": ", N),
+            hoverinfo = "text+x"
+          )
+      }
+      p |>
+        plotly::layout(
+          barmode = "stack",
+          title = sprintf("Алерты по типам (%d после фильтров)", nrow(a)),
+          xaxis = list(title = "время (UTC)"),
+          yaxis = list(title = "алертов / мин"),
+          legend = list(orientation = "h", y = 1.12)
+        )
+    })
+
+    output$attack_mix <- plotly::renderPlotly({
+      a <- filtered_alerts()
+      shiny::req(nrow(a) > 0)
+      g <- a[, .N, by = attack_type][order(-N)]
+      g[, label := vapply(attack_type, function(tp) {
+        get_attack_meta(tp)$label
+      }, character(1))]
+      g[, pct := round(100 * N / sum(N), 1)]
+      g[, hover := paste0(label, ": ", N, " (", pct, "%)")]
+
+      plotly::plot_ly(
+        g, labels = ~label, values = ~N, type = "pie",
+        text = ~hover, hoverinfo = "text",
+        marker = list(colors = .attack_palette(g$attack_type), line = list(color = "#fff", width = 1))
+      ) |>
+        plotly::layout(
+          title = "Доля типов атак среди алертов",
+          showlegend = TRUE,
+          legend = list(orientation = "v", x = 1.02, y = 0.5)
+        )
     })
 
     output$topip <- plotly::renderPlotly({
       a <- filtered_alerts()
       shiny::req(nrow(a) > 0)
-      g <- a[, .N, by = src_ip][order(-N)][1:min(.N, 20)]
-      plotly::plot_ly(g, x = ~N, y = ~reorder(src_ip, N), type = "bar", orientation = "h") |>
-        plotly::layout(yaxis = list(title = ""), xaxis = list(title = "алертов"))
+      g <- a[, .(
+        alerts = .N,
+        max_score = max(anomaly_score, na.rm = TRUE),
+        top_type = attack_type[which.max(anomaly_score)]
+      ), by = src_ip][order(-alerts)][1:min(.N, 20)]
+      g[, type_label := vapply(top_type, function(tp) {
+        get_attack_meta(tp)$label
+      }, character(1))]
+      g[, hover := paste0(
+        src_ip, "\nалертов: ", alerts,
+        "\nmax score: ", round(max_score, 4),
+        "\nдомин. тип: ", type_label
+      )]
+
+      plotly::plot_ly(
+        g, x = ~alerts, y = ~reorder(src_ip, alerts), type = "bar",
+        orientation = "h",
+        marker = list(color = .attack_palette(g$top_type)),
+        text = ~hover, hoverinfo = "text"
+      ) |>
+        plotly::layout(
+          title = "Топ источников по числу алертов",
+          xaxis = list(title = "алертов"),
+          yaxis = list(title = "")
+        )
     })
 
     output$alerts_tbl <- DT::renderDT({

@@ -51,16 +51,18 @@ init_ids_config <- function(root = NULL) {
     max_depth       = 100L,
     ndim            = 1L,
     contamination   = 0.01,
-    threshold_quant = 0.99,
+    threshold_quant = 0.995,
     seed            = 42L,
     nthreads        = max(1L, parallel::detectCores() - 1L)
   )
 
   detect_params <- list(
     window_seconds  = 300L,
-    alert_min_score = 0.55,
+    alert_min_score = 0,
+    score_margin    = 0.02,
+    ml_score_quantile = 0.80,
     enable_blocking = FALSE,
-    dedup_seconds   = 60L,
+    dedup_seconds   = 120L,
     rules = list(
       adaptive_frac = 0.75,
       query_entropy = 3.0,

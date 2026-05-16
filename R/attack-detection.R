@@ -10,6 +10,51 @@
 }
 
 #' @keywords internal
+.load_model_meta <- function(meta_path = PATHS$meta_file) {
+  if (!file.exists(meta_path)) return(NULL)
+  readRDS(meta_path)
+}
+
+#' @keywords internal
+.refine_alerts <- function(alerts, meta, params = DETECT_PARAMS) {
+  if (!nrow(alerts)) return(alerts)
+  alerts <- data.table::copy(data.table::as.data.table(alerts))
+
+  thr <- meta$threshold %||% 0
+  margin <- params$score_margin %||% 0
+  if (is.finite(margin) && margin > 0) {
+    alerts <- alerts[anomaly_score > thr + margin]
+  }
+  min_score <- params$alert_min_score %||% 0
+  if (is.finite(min_score) && min_score > 0) {
+    alerts <- alerts[anomaly_score >= min_score]
+  }
+
+  ml_q <- params$ml_score_quantile %||% 0
+  if (is.finite(ml_q) && ml_q > 0 && ml_q < 1) {
+    score_cut <- stats::quantile(alerts$anomaly_score, probs = ml_q, na.rm = TRUE)
+    alerts <- alerts[
+      attack_type != (params$rules$fallback_type %||% "ml_anomaly") |
+        anomaly_score >= score_cut
+    ]
+  }
+
+  dedup <- params$dedup_seconds %||% 0L
+  if (is.finite(dedup) && dedup > 0 && "ts" %in% names(alerts)) {
+    alerts[, ts_num := safe_num(ts)]
+    alerts[, dedup_bucket := floor(ts_num / dedup)]
+    data.table::setorder(alerts, -anomaly_score)
+    alerts <- unique(
+      alerts,
+      by = c("src_ip", "attack_type", "dedup_bucket")
+    )
+    alerts[, c("ts_num", "dedup_bucket") := NULL]
+  }
+
+  alerts
+}
+
+#' @keywords internal
 .ensure_rule_cols <- function(dt) {
   need <- c(
     "conn_count_5min", "dest_port_distinct", "unique_dst_ip",
@@ -75,6 +120,11 @@ classify_attacks <- function(dt, rules = DETECT_PARAMS$rules) {
      `:=`(attack_score = 2L, attack_type = "ssl_anomaly")]
   dt[data_volume_change >= rules$volume_pct & attack_type == rules$fallback_type,
      `:=`(attack_score = 2L, attack_type = "traffic_spike")]
+  dt[data_volume_change >= rules$volume_pct * 0.5 & conn_count_5min >= 5 &
+       attack_type == rules$fallback_type,
+     `:=`(attack_score = 2L, attack_type = "traffic_spike")]
+  dt[conn_count_5min >= 8 & dest_port_distinct >= 6 & attack_type == rules$fallback_type,
+     `:=`(attack_score = 2L, attack_type = "port_scan")]
 
   if ("service" %in% names(dt)) {
     dt[service %in% c("irc", "socks") & attack_type == rules$fallback_type,
@@ -139,12 +189,23 @@ detect <- function(features_path = PATHS$features,
   log_info("Scored: %d rows -> %s", nrow(feats), PATHS$scored)
 
   alerts <- feats[is_anomaly == TRUE]
+  n_raw <- nrow(alerts)
   log_info("Detect: %d / %d above threshold (%.4f)",
-           nrow(alerts), nrow(feats), meta$threshold)
+           n_raw, nrow(feats), meta$threshold)
 
   if (!nrow(alerts)) return(invisible(alerts))
 
   alerts <- classify_attack(alerts)
+  alerts <- .refine_alerts(alerts, meta)
+  if (n_raw > nrow(alerts)) {
+    log_info("Alert filter: %d -> %d (margin/dedup/ml quantile)",
+             n_raw, nrow(alerts))
+  }
+  if (!nrow(alerts)) {
+    log_info("No alerts after refinement")
+    return(invisible(alerts))
+  }
+
   by_type <- paste(names(sort(table(alerts$attack_type), decreasing = TRUE)),
                    collapse = ", ")
   log_info("Alert types: %s", by_type)

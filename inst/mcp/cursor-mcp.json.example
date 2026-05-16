@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ids-ai-istd": {
+      "command": "Rscript",
+      "args": ["/ABSOLUTE/PATH/TO/IDS_AI-ISTD/inst/mcp/ids_mcp_server.R"],
+      "env": {
+        "IDS_PROJECT_ROOT": "/ABSOLUTE/PATH/TO/IDS_AI-ISTD"
+      }
+    }
+  }
+}

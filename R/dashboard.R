@@ -259,10 +259,21 @@ ids_dashboard_app <- function() {
     theme = bslib::bs_theme(bootswatch = "flatly"),
     .alert_card_css(),
     .pipeline_console_css(),
+    .repl_console_css(),
     shiny::tags$script(shiny::HTML("
       Shiny.addCustomMessageHandler('idsScrollConsole', function() {
         var el = document.getElementById('pipeline_console');
         if (el) el.scrollTop = el.scrollHeight;
+      });
+      Shiny.addCustomMessageHandler('idsScrollRepl', function() {
+        var el = document.getElementById('repl_console');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+      $(document).on('keydown', '#repl_input', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          $('#repl_run').click();
+          e.preventDefault();
+        }
       });
     ")),
     sidebar = bslib::sidebar(
@@ -279,29 +290,61 @@ ids_dashboard_app <- function() {
                           class = "btn-primary", icon = shiny::icon("play")),
         shiny::tags$small(class = "text-muted",
                           "Форматы: .pcap, .pcapng, .pcap.gz."),
-        shiny::tags$div(
-          class = "pipeline-console-wrap",
-          shiny::tags$div(
-            class = "pipeline-console-toolbar",
-            shiny::selectInput(
-              "log_filter", NULL,
-              choices = c(
-                "Весь лог" = "all",
-                "Только ошибки" = "errors"
+        bslib::navset_card_tab(
+          bslib::nav_panel(
+            "Лог пайплайна",
+            shiny::tags$div(
+              class = "pipeline-console-wrap",
+              shiny::tags$div(
+                class = "pipeline-console-toolbar",
+                shiny::selectInput(
+                  "log_filter", NULL,
+                  choices = c(
+                    "Весь лог" = "all",
+                    "Только ошибки" = "errors"
+                  ),
+                  width = "140px"
+                ),
+                shiny::actionButton(
+                  "clear_log", "Очистить",
+                  class = "btn-sm btn-outline-secondary",
+                  icon = shiny::icon("eraser")
+                ),
+                shiny::downloadButton(
+                  "download_log", "Скачать",
+                  class = "btn-sm btn-outline-secondary"
+                )
               ),
-              width = "140px"
-            ),
-            shiny::actionButton(
-              "clear_log", "Очистить",
-              class = "btn-sm btn-outline-secondary",
-              icon = shiny::icon("eraser")
-            ),
-            shiny::downloadButton(
-              "download_log", "Скачать",
-              class = "btn-sm btn-outline-secondary"
+              shiny::uiOutput("pipeline_console")
             )
           ),
-          shiny::uiOutput("pipeline_console")
+          bslib::nav_panel(
+            "R консоль",
+            shiny::tags$div(
+              class = "repl-console-wrap",
+              shiny::tags$div(
+                class = "repl-toolbar",
+                shiny::actionButton(
+                  "repl_run", "Выполнить",
+                  class = "btn-sm btn-primary",
+                  icon = shiny::icon("play")
+                ),
+                shiny::actionButton(
+                  "repl_clear", "Очистить",
+                  class = "btn-sm btn-outline-secondary",
+                  icon = shiny::icon("eraser")
+                ),
+                shiny::tags$small(class = "text-muted", "Ctrl+Enter")
+              ),
+              shiny::uiOutput("repl_history"),
+              shiny::textAreaInput(
+                "repl_input", NULL,
+                value = "", rows = 3, resize = "vertical",
+                placeholder = "R: help(), nrow(scored), run_ids_pipeline(stages='detect')"
+              )
+            )
+          ),
+          bslib::nav_panel("MCP", shiny::uiOutput("mcp_panel"))
         ),
         shiny::tags$hr(),
         shiny::textOutput("pcap_queue")
@@ -363,8 +406,10 @@ ids_dashboard_app <- function() {
       scored = load_scored(),
       alerts = load_alerts(),
       pipeline_log = "",
-      selected_alert_id = NULL
+      selected_alert_id = NULL,
+      repl_history = list()
     )
+    repl_env <- .create_ids_repl_env()
     pipeline_busy <- shiny::reactiveVal(FALSE)
     model_meta <- shiny::reactive(load_model_meta())
 
@@ -412,6 +457,31 @@ ids_dashboard_app <- function() {
     shiny::observe({
       shiny::req(nzchar(rv$pipeline_log %||% ""))
       session$sendCustomMessage("idsScrollConsole", list())
+    })
+
+    output$repl_history <- shiny::renderUI({
+      .render_repl_history(rv$repl_history)
+    })
+
+    output$mcp_panel <- shiny::renderUI({
+      .render_mcp_panel(PROJECT_ROOT)
+    })
+
+    run_repl_code <- function() {
+      code <- input$repl_input %||% ""
+      entry <- .repl_eval(code, repl_env)
+      rv$repl_history <- c(rv$repl_history, list(entry))
+      shiny::updateTextAreaInput(session, "repl_input", value = "")
+      session$sendCustomMessage("idsScrollRepl", list())
+      if (isTRUE(entry$ok) && grepl("run_ids_pipeline|detect\\(", code)) {
+        refresh_dashboard()
+      }
+    }
+
+    shiny::observeEvent(input$repl_run, run_repl_code())
+
+    shiny::observeEvent(input$repl_clear, {
+      rv$repl_history <- list()
     })
 
     shiny::observeEvent(input$run_pipeline, {

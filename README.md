@@ -1,87 +1,73 @@
-# Документация пакета `idsAiIstd` (каталог `R/`)
+# IDS AI-ISTD
 
-Пакет **IDS_AI-ISTD** реализует пакетный (batch) конвейер системы обнаружения вторжений (IDS) для сетевого трафика IoT: от PCAP-захватов до ML-скоринга, rule-based классификации атак и визуализации в Shiny-дашборде.
+**IoT Intrusion Detection System** — R-пакет `idsAiIstd` для анализа сетевого трафика IoT-устройств: разбор PCAP через [Zeek](https://zeek.org/), построение признаков, обнаружение аномалий моделью **Isolation Forest** и rule-based классификация типов атак. Результаты доступны в виде Parquet-артефактов, JSONL-алертов и интерактивного **Shiny**-дашборда; опционально — интеграция с **MCP** (Cursor / AI-агенты).
+
+| Поле | Значение |
+|------|----------|
+| Версия пакета | `0.1.0` |
+| Минимальная версия R | `4.2.0` (CI/Docker: `4.3.2`) |
+| Лицензия | MIT |
+| Репозиторий | [ZWIYS/IDS_AI-ISTD](https://github.com/ZWIYS/IDS_AI-ISTD) |
+
+**Авторы:** A.A. Kulikov, A.A. Oglodin, V.V. Pastukhov, P.S. Plyuvkov, D.V. Toykina (см. `DESCRIPTION`).
 
 ---
 
 ## Содержание
 
-1. [Общая архитектура](#1-общая-архитектура)
-2. [Логика работы конвейера](#2-логика-работы-конвейера)
-3. [Глобальное состояние и конфигурация](#3-глобальное-состояние-и-конфигурация)
-4. [Структура каталогов проекта](#4-структура-каталогов-проекта)
-5. [Модули по файлам](#5-модули-по-файлам)
-  - [idsAiIstd-package.R](#idsaiistd-packager)
-  - [aaa.R](#aaar)
-  - [config.R](#configr)
-  - [utils.R](#utilsr)
-  - [data-collection.R](#data-collectionr)
-  - [feature-engineering.R](#feature-engineeringr)
-  - [ml-training.R](#ml-trainingr)
-  - [attack-detection.R](#attack-detectionr)
-  - [pipeline-runner.R](#pipeline-runnerr)
-  - [pcap-upload.R](#pcap-uploadr)
-  - [dashboard.R](#dashboardr)
-6. [Публичный API](#6-публичный-api)
-7. [Способы запуска](#7-способы-запуска)
-8. [Зависимости](#8-зависимости)
+1. [Назначение и возможности](#назначение-и-возможности)
+2. [Архитектура](#архитектура)
+3. [Структура проекта](#структура-проекта)
+4. [Конвейер обработки](#конвейер-обработки)
+5. [Конфигурация и переменные](#конфигурация-и-переменные)
+6. [Признаки (features)](#признаки-features)
+7. [Модель и детектирование](#модель-и-детектирование)
+8. [Типы атак и правила](#типы-атак-и-правила)
+9. [Форматы данных](#форматы-данных)
+10. [Установка](#установка)
+11. [Быстрый старт](#быстрый-старт)
+12. [CLI и Docker](#cli-и-docker)
+13. [Shiny-дашборд](#shiny-дашборд)
+14. [MCP-сервер](#mcp-сервер)
+15. [Публичный API пакета](#публичный-api-пакета)
+16. [Тестирование и CI](#тестирование-и-ci)
+17. [Зависимости](#зависимости)
+18. [Детали ETL и логи Zeek](#детали-etl-и-логи-zeek)
+19. [Адаптивные пороги и attack_score](#адаптивные-пороги-и-attack_score)
+20. [Типовые сценарии запуска](#типовые-сценарии-запуска)
+21. [Примеры артефактов](#примеры-артефактов)
+22. [Дашборд: интерфейс и REPL](#дашборд-интерфейс-и-repl)
+23. [Логирование и отладка](#логирование-и-отладка)
+24. [Устранение неполадок](#устранение-неполадок)
 
 ---
 
-## Быстрый старт
+## Назначение и возможности
 
-1. Перед стартом:
-  Убедиться в наличии Zeek в path вашей системы!
-  Первый запуск без PCAP упадёт на стадии data — нужен хотя бы один .pcap в 
-  ```R
-  R Проект/data/pcap/
-  ```
-2. Установить пакет с github
-  ```R
-  install.packages("remotes")
-  ```
-  ```R
-  remotes::install_github("ZWIYS/IDS_AI-ISTD")
-  ```
-3. Подключить пакет в R и указать путь
-  ```R
-  library(idsAiIstd)
-  ```
-  ```R
-  init_ids_config("/Путь к R Проекту")
-  ```
-4. Добавление первого .pcap и запуск пайплайна
-  Положить .pcap файл в /Проект R/data/pcap/
-  ```R
-  run_ids_pipeline()
-  ```
-5. Подключение дашборда
-  ```R
-  run_dashboard(port = 4321)
-  ```
-  или любой удобный вам порт
+Система предназначена для **офлайн/batch-анализа** захватов трафика (`.pcap`, `.pcapng`, сжатые `.gz`):
 
-6*. Запуск docker контейнера
-```
-docker run --rm -it -p 4321:4321 \
-  -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/models:/app/models" \
-  -v "$(pwd)/alerts:/app/alerts" \
-  ghcr.io/zwiys/ids_ai-istd:<АКТУАЛЬНЫЙ ТЕГ> \
-  bash -c "bash scripts/download_sample_pcaps.sh && Rscript run_pipeline.R && Rscript -e \"shiny::runApp('R/05_dashboard.R', port=4321, host='0.0.0.0')\""
-```
+- Парсинг PCAP средствами **Zeek** (`conn.log`, `dns.log`, `http.log`, `ssl.log`).
+- Обогащение сессий DNS/HTTP/TLS-признаками и агрегатами по временным окнам (5 минут по умолчанию).
+- Обучение **Isolation Forest** (`isotree`) с препроцессингом **tidymodels/recipes**.
+- Скоринг сессий, фильтрация алертов (порог, margin, дедупликация, квантиль ML-аномалий).
+- **Rule-based** назначение типа атаки (`ddos`, `port_scan`, …) поверх ML-скора.
+- Визуализация и загрузка PCAP через Shiny; опционально — MCP-инструменты для агентов.
 
-## 1. Общая архитектура
+> **Важно:** Zeek должен быть доступен в `PATH` (или задан через `ZEEK_BIN`). Первый запуск без PCAP в `data/pcap/` завершится ошибкой на стадии `data`.
 
-Проект оформлен как R-пакет `idsAiIstd`. Весь исполняемый код конвейера сосредоточен в каталоге `R/`. Точки входа снаружи пакета:
+### Ограничения и допущения
 
+- Конвейер **не является inline-NIDS**: анализ идёт по уже записанным PCAP, а не по live-интерфейсу.
+- Одна строка `conn.log` ≈ одна **сессия/соединение** Zeek; агрегаты «за 5 минут» считаются по `src_ip` внутри батча, а не по скользящему окну в реальном времени.
+- Модель обучается на **всех** сессиях в `features.parquet` (unsupervised); меток «норма/атака» в обучении нет.
+- Rule-based слой **не заменяет** ML: он уточняет тип только для сессий, уже прошедших порог Isolation Forest.
+- При очень маленьких PCAP адаптивные правила срабатывают на сниженных порогах (см. [адаптивные пороги](#адаптивные-пороги-и-attack_score)) — возможны ложные срабатывания на демо-трейсах Zeek.
 
-| Точка входа          | Назначение                                                                   |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `run_pipeline.R`     | CLI: последовательный запуск стадий `data` → `features` → `train` → `detect` |
-| `run_dashboard()`    | Shiny UI: загрузка PCAP, запуск конвейера, графики и таблица алертов         |
-| `run_ids_pipeline()` | Программный вызов тех же стадий из R или Shiny                               |
+---
 
+## Архитектура
+
+### Общая схема
 
 ```mermaid
 flowchart LR
@@ -89,677 +75,749 @@ flowchart LR
     PCAP[PCAP / PCAPNG]
   end
 
-  subgraph stage_data [Стадия data]
-    ZEEK[Zeek -r pcap]
-    LOGS[conn.log dns.log http.log ssl.log]
-    ETL[run_etl / process_pcap]
-    DS[(dataset.parquet)]
+  subgraph etl [Стадия data]
+    Z[Zeek]
+    ZL[Zeek logs TSV]
+    DS[dataset.parquet]
+    PCAP --> Z --> ZL --> DS
   end
 
-  subgraph stage_features [Стадия features]
-    FE[build_features]
-    FP[(features.parquet)]
+  subgraph fe [Стадия features]
+    FE[Feature engineering]
+    FP[features.parquet]
+    DS --> FE --> FP
   end
 
-  subgraph stage_train [Стадия train]
-    TR[train_iforest]
-    MF[(iforest.rds)]
-    MM[(model_meta.rds)]
+  subgraph ml [Стадия train]
+    TR[Isolation Forest + recipe]
+    MF[iforest.rds]
+    MM[model_meta.rds]
+    FP --> TR --> MF
+    TR --> MM
   end
 
-  subgraph stage_detect [Стадия detect]
-    DT[detect + classify_attacks]
-    SC[(scored.parquet)]
-    AL[alerts.jsonl]
+  subgraph det [Стадия detect]
+    SC[Scoring]
+    CL[Rule classifier]
+    RF[Alert refinement]
+    SP[scored.parquet]
+    AJ[alerts.jsonl]
+    FP --> SC
+    MF --> SC
+    MM --> SC
+    SC --> SP
+    SC --> CL --> RF --> AJ
   end
 
-  subgraph ui [Интерфейс]
-    DASH[Shiny dashboard]
+  subgraph ui [Интерфейсы]
+    SH[Shiny dashboard]
+    MCP[MCP server]
+    AJ --> SH
+    SP --> SH
+    AJ --> MCP
   end
-
-  PCAP --> ZEEK --> LOGS --> ETL --> DS
-  DS --> FE --> FP
-  FP --> TR --> MF
-  FP --> DT
-  MF --> DT
-  MM --> DT
-  DT --> SC
-  DT --> AL
-  AL --> DASH
-  SC --> DASH
 ```
 
+### Слои кода (R-пакет `idsAiIstd`)
 
+| Модуль | Файл | Роль |
+|--------|------|------|
+| Конфигурация | `R/config.R` | Пути, `MODEL_PARAMS`, `DETECT_PARAMS`, `ZEEK_BIN` |
+| ETL | `R/data-collection.R` | Zeek, чтение логов, `dataset.parquet` |
+| Признаки | `R/feature-engineering.R` | Агрегаты, окна, `features.parquet` |
+| Обучение | `R/ml-training.R` | Isolation Forest, метаданные модели |
+| Детект | `R/attack-detection.R` | Скоринг, классификация, алерты |
+| Каталог атак | `R/attack-catalog.R` | Описания типов, `explain_alert()` |
+| Оркестратор | `R/pipeline-runner.R` | `run_ids_pipeline()` |
+| Дашборд | `R/dashboard.R`, `R/dashboard-repl.R` | Shiny UI + безопасная REPL |
+| PCAP upload | `R/pcap-upload.R` | Загрузка файлов в дашборде |
+| MCP | `R/mcp-server.R`, `inst/mcp/*` | stdio-сервер для Cursor |
+| Утилиты | `R/utils.R` | Логи, Zeek TSV, энтропия, `safe_num` |
+| Точка входа CLI | `run_pipeline.R` | `Rscript run_pipeline.R` |
 
-**Два слоя детектирования:**
-
-1. **ML (Isolation Forest)** — без учителя; сессии с `anomaly_score` выше порога (`meta$threshold`) помечаются как `is_anomaly = TRUE`.
-2. **Rule-based (`classify_attacks`)** — только для строк-алертов; присваивает `attack_type` и `attack_score` по эвристикам (DDoS, port scan, exfiltration и т.д.). Если правило не сработало, тип остаётся `ml_anomaly` (или значение `DETECT_PARAMS$rules$fallback_type`).
-
-Zeek используется как **парсер PCAP → структурированные логи**; обучение и инференс выполняются в R (`isotree`, `recipes`, `arrow`).
-
----
-
-## 2. Логика работы конвейера
-
-### 2.1. Инициализация
-
-При `library(idsAiIstd)` срабатывает `.onLoad()` в `idsAiIstd-package.R`: если в пространстве имён пакета ещё нет `PATHS`, вызывается `init_ids_config()` — создаются каталоги и задаются пути, гиперпараметры модели и пороги детектора.
-
-Корень проекта (`PROJECT_ROOT`) определяется так:
-
-1. Аргумент `root` в `init_ids_config(root = ...)`.
-2. Переменные окружения `IDS_PROJECT_ROOT` или устаревшая `IDS_V2_ROOT`.
-3. Иначе `getwd()`.
-
-В CLI-скрипте `run_pipeline.R` корень принудительно выставляется в каталог, где лежит скрипт.
-
-### 2.2. Стадия `data` (`run_etl`)
-
-1. Сканируется `PATHS$pcap_dir` (или переданный `pcap_dir`) на файлы `*.pcap`, `*.pcapng`, с опциональным `.gz`.
-2. Для каждого PCAP:
-  - `run_zeek()` — запуск Zeek с кэшем по MD5 файла в `data/zeek_logs/<hash>/`.
-  - `load_conn()` — чтение `conn.log`, переименование полей Zeek в `src_ip`, `dst_ip`, `src_port`, `dst_port`.
-  - Обогащение по `uid`: DNS (`query_length`, `query_entropy`, `num_labels`), HTTP (`uri_length`, `ua_length`, `http_status_code`), SSL (`ssl_sni_length`, `ssl_sni_entropy`).
-3. Результаты объединяются в одну `data.table` и пишутся в `**dataset.parquet`**.
-
-Каждая строка — сетевая **сессия/соединение** (запись conn Zeek), не отдельный пакет.
-
-### 2.3. Стадия `features` (`build_features`)
-
-1. Читается `dataset.parquet`.
-2. `add_conn_features()` — производные признаки на уровне сессии (`total_bytes`, `bytes_per_sec`, `pkt_ratio`, `history_length`).
-3. `add_window_features()` — агрегаты в скользящем окне **300 с** (`DETECT_PARAMS$window_seconds`) по паре `(src_ip, bucket)`, где `bucket = floor(ts / window)`:
-  - `conn_count_5min`, `dest_port_distinct`, `unique_dst_ip`, `bytes_5min`, `data_volume_change`.
-4. `fill_defaults()` — заполнение пропусков константами из `FEATURE_DEFAULTS` и категорий `unknown`.
-5. Запись в `**features.parquet`**.
-
-### 2.4. Стадия `train` (`train_iforest`)
-
-1. Из `features.parquet` берутся только колонки `NUM_FEATURES` + `CAT_FEATURES`.
-2. `rsample::initial_split` 80/20; на train строится `recipes::recipe` (медианная импутация числовых, факторизация строк, `step_novel` для неизвестных уровней).
-3. Обучается `isotree::isolation.forest` с параметрами из `MODEL_PARAMS`.
-4. Порог аномальности — **99-й перцентиль** скоров на validation (`threshold_quant = 0.99`).
-5. Сохраняются `**iforest.rds`** и `**model_meta.rds`** (порог, prep recipe, имена признаков, summary скоров, `trained_at`).
-
-### 2.5. Стадия `detect` (`detect`)
-
-1. Загружаются features, модель и meta.
-2. Недостающие колонки для recipe дополняются; `fill_defaults()`.
-3. `recipes::bake()` → предсказание `anomaly_score`; `is_anomaly = score > threshold`.
-4. Полный результат — `**scored.parquet**`.
-5. Подмножество с `is_anomaly == TRUE` проходит `classify_attacks()` → `**alerts.jsonl**` (по одной JSON-строке на алерт).
-
-### 2.6. Shiny-дашборд
-
-Пользователь загружает PCAP в `data/pcap/uploaded/`, нажимает «Запустить анализ» → `save_uploaded_pcaps()` + `run_ids_pipeline(pcap_dir = PATHS$pcap_upload_dir)`. После успеха обновляются графики и таблица из `scored.parquet` и `alerts.jsonl`.
+При загрузке пакета (`.onLoad`) вызывается `init_ids_config()` с корнем из `IDS_PROJECT_ROOT` / `IDS_V2_ROOT` или `getwd()`.
 
 ---
 
-## 3. Глобальное состояние и конфигурация
+## Структура проекта
 
-Переменные живут в **пространстве имён пакета** `idsAiIstd` (не в глобальном `.GlobalEnv`), задаются функцией `init_ids_config()`.
-
-### 3.1. `PROJECT_ROOT`
-
-Абсолютный путь к корню развёртывания: под ним ожидаются `data/`, `models/`, `alerts/`, `scripts/`.
-
-### 3.2. `PATHS` (список путей)
-
-
-| Ключ              | Путь по умолчанию                                    | Назначение                                                                     |
-| ----------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `pcap_dir`        | `data/pcap`                                          | Входные PCAP для batch ETL (CLI)                                               |
-| `pcap_upload_dir` | `data/pcap/uploaded`                                 | PCAP из Shiny                                                                  |
-| `zeek_logs_dir`   | `data/zeek_logs`                                     | Кэш логов Zeek (подкаталог = MD5 PCAP)                                         |
-| `processed_dir`   | `data/processed`                                     | Промежуточные parquet                                                          |
-| `models_dir`      | `models`                                             | RDS модели                                                                     |
-| `alerts_dir`      | `alerts`                                             | JSONL алертов                                                                  |
-| `dataset`         | `.../dataset.parquet`                                | Сырой датасет после ETL                                                        |
-| `features`        | `.../features.parquet`                               | Признаки для ML                                                                |
-| `scored`          | `.../scored.parquet`                                 | Сессии со скорами и флагом аномалии                                            |
-| `model_file`      | `models/iforest.rds`                                 | Isolation Forest                                                               |
-| `meta_file`       | `models/model_meta.rds`                              | Метаданные и recipe                                                            |
-| `alerts_file`     | `alerts/alerts.jsonl`                                | Поток алертов                                                                  |
-| `block_script`    | `inst/scripts/block_ip.sh` или `scripts/block_ip.sh` | Скрипт блокировки IP (зарезервировано; `enable_blocking` по умолчанию `FALSE`) |
-
-
-При инициализации все каталоги с суффиксом `_dir` создаются через `dir.create(..., recursive = TRUE)`.
-
-### 3.3. `MODEL_PARAMS`
-
-
-| Параметр          | Значение по умолчанию | Смысл                                                      |
-| ----------------- | --------------------- | ---------------------------------------------------------- |
-| `ntrees`          | 200                   | Число деревьев Isolation Forest                            |
-| `sample_size`     | 256                   | Размер подвыборки на дерево (ограничивается `nrow(train)`) |
-| `max_depth`       | 100                   | Максимальная глубина                                       |
-| `ndim`            | 1                     | Размерность случайных подпространств                       |
-| `contamination`   | 0.01                  | Зарезервировано в конфиге (порог задаётся через quantile)  |
-| `threshold_quant` | 0.99                  | Квантиль скоров validation → порог аномалии                |
-| `seed`            | 42                    | Воспроизводимость                                          |
-| `nthreads`        | `detectCores() - 1`   | Потоки `isotree`                                           |
-
-
-### 3.4. `DETECT_PARAMS`
-
-
-| Параметр          | Значение | Смысл                                                                  |
-| ----------------- | -------- | ---------------------------------------------------------------------- |
-| `window_seconds`  | 300      | Окно агрегации по `src_ip` (5 минут)                                   |
-| `alert_min_score` | 0.55     | Зарезервировано для фильтрации (в `detect()` не используется напрямую) |
-| `enable_blocking` | FALSE    | Автоблокировка IP через `block_script`                                 |
-| `dedup_seconds`   | 60       | Зарезервировано для дедупликации алертов                               |
-| `rules`           | см. ниже | Пороги rule-based классификатора                                       |
-
-
-`**DETECT_PARAMS$rules`:**
-
-
-| Ключ            | Значение       | Использование                                                |
-| --------------- | -------------- | ------------------------------------------------------------ |
-| `adaptive_frac` | 0.75           | Доля от max в батче для адаптивных порогов (`.adaptive_min`) |
-| `query_entropy` | 3.0            | DNS: подозрительная энтропия запроса                         |
-| `query_length`  | 40             | DNS: длинный query                                           |
-| `uri_length`    | 150            | HTTP: длинный URI                                            |
-| `ssl_entropy`   | 3.0            | SSL: энтропия SNI                                            |
-| `volume_pct`    | 150            | Рост объёма трафика между окнами, %                          |
-| `fallback_type` | `"ml_anomaly"` | Тип атаки, если ни одно правило не сработало                 |
-
-
-### 3.5. `ZEEK_BIN`
-
-Путь к исполняемому файлу Zeek; по умолчанию из `Sys.getenv("ZEEK_BIN", "zeek")`.
-
-### 3.6. Признаки (`feature-engineering.R`)
-
-`**FEATURE_DEFAULTS`** — словарь значений по умолчанию для всех числовых признаков.
-
-`**NUM_FEATURES`** — имена числовых признаков (равны `names(FEATURE_DEFAULTS)`):
-
-- Сессия: `duration`, `orig_bytes`, `resp_bytes`, `missed_bytes`, `orig_pkts`, `resp_pkts`, `total_bytes`, `bytes_per_sec`, `pkt_ratio`, `history_length`
-- DNS/HTTP/SSL: `query_length`, `query_entropy`, `num_labels`, `uri_length`, `ua_length`, `http_status_code`, `ssl_sni_length`, `ssl_sni_entropy`
-- Окно: `conn_count_5min`, `dest_port_distinct`, `unique_dst_ip`, `bytes_5min`, `data_volume_change`
-
-`**CAT_FEATURES**`: `proto`, `service`, `conn_state` — номинальные признаки для recipe.
-
----
-
-## 4. Структура каталогов проекта
+После `init_ids_config("/path/to/project")` создаются каталоги и файлы:
 
 ```
-IDS_AI-ISTD/
-├── R/                    # исходники пакета (эта документация)
+/project_root/
 ├── data/
-│   ├── pcap/             # PCAP для CLI
-│   ├── pcap/uploaded/    # PCAP из дашборда
-│   ├── zeek_logs/        # кэш Zeek
-│   └── processed/        # parquet
-├── models/               # iforest.rds, model_meta.rds
-├── alerts/               # alerts.jsonl
-├── scripts/              # block_ip.sh и вспомогательные shell
-├── run_pipeline.R        # CLI-оркестратор
-├── inst/scripts/         # block_ip.sh внутри пакета
-└── tests/testthat/       # unit-тесты
+│   ├── pcap/              # исходные PCAP (ETL по умолчанию)
+│   │   └── uploaded/      # загрузки из Shiny / MCP pipeline
+│   ├── zeek_logs/         # кэш логов Zeek (подкаталог = MD5 PCAP)
+│   └── processed/
+│       ├── dataset.parquet
+│       ├── features.parquet
+│       └── scored.parquet
+├── models/
+│   ├── iforest.rds        # обученная Isolation Forest
+│   └── model_meta.rds     # порог, recipe, список признаков
+├── alerts/
+│   ├── alerts.jsonl       # алерты (JSON Lines)
+│   └── blocks.log         # лог «блокировок» (если enable_blocking)
+├── scripts/
+│   ├── block_ip.sh
+│   ├── download_sample_pcaps.sh
+│   └── import_pcaps.sh
+├── R/                     # исходники пакета
+├── inst/
+│   ├── mcp/               # MCP tools и пример конфига Cursor
+│   └── scripts/block_ip.sh
+├── tests/
+├── run_pipeline.R
+├── docker-compose.yml
+└── Dockerfile
 ```
 
 ---
 
-## 5. Модули по файлам
+## Конвейер обработки
 
-### idsAiIstd-package.R
+### Стадии
 
-**Назначение:** метаданные пакета и хук загрузки.
+Функция `run_ids_pipeline(stages, pcap_dir, reset_alerts)` последовательно вызывает:
 
+| Стадия | Функция | Вход | Выход |
+|--------|---------|------|-------|
+| `data` | `run_etl()` | `data/pcap/*.pcap*` | `data/processed/dataset.parquet` |
+| `features` | `build_features()` | `dataset.parquet` | `features.parquet` |
+| `train` | `train_iforest()` | `features.parquet` | `models/iforest.rds`, `models/model_meta.rds` |
+| `detect` | `detect()` | `features.parquet` + модель | `scored.parquet`, `alerts/alerts.jsonl` |
 
-| Элемент                              | Описание                                                             |
-| ------------------------------------ | -------------------------------------------------------------------- |
-| `"_PACKAGE"`                         | Стандартный маркер пакета для roxygen                                |
-| `@import data.table`                 | Импорт всего пакета `data.table`                                     |
-| `@importFrom stats predict quantile` | Для ML и порога                                                      |
-| `@importFrom utils head tail`        | Вспомогательные функции                                              |
-| `.onLoad(libname, pkgname)`          | При загрузке вызывает `init_ids_config()`, если `PATHS` ещё не задан |
+Параметры:
 
+- **`stages`** — вектор имён стадий; по умолчанию все четыре.
+- **`pcap_dir`** — если задан, передаётся только в `run_etl()` (иначе `PATHS$pcap_dir`).
+- **`reset_alerts`** — при `TRUE` и наличии стадии `detect` файл `alerts.jsonl` очищается перед записью.
 
-Публичных функций не экспортирует.
+### ETL (стадия `data`)
 
----
+1. Для каждого PCAP вычисляется **MD5** файла → каталог кэша `data/zeek_logs/<hash>/`.
+2. Если есть маркер `.done`, Zeek не перезапускается.
+3. Zeek: `zeek -r <pcap> LogAscii::use_json=F` (таймаут 600 с, `processx`).
+4. Загружается `conn.log`, переименовываются поля Zeek → `src_ip`, `dst_ip`, `src_port`, `dst_port`.
+5. По `uid` джойнятся обогащения из `dns.log`, `http.log`, `ssl.log`.
+6. Все PCAP объединяются в один `dataset.parquet` (`arrow`).
 
-### aaa.R
+Ошибка на одном PCAP не останавливает весь ETL: сбой логируется (`log_error`), файл пропускается. Если ни один PCAP не обработан — `stop("ETL produced zero rows")`.
 
-**Назначение:** подавление предупреждений R CMD check о **неявных переменных** (NSE) в `data.table` и Shiny.
+### Стадия `features`
 
-`utils::globalVariables(c(...))` объявляет символы вроде `src_ip`, `attack_type`, `i.conn_count_5min`, `PATHS`, `PROJECT_ROOT`, которые используются внутри `dt[, ...]` и реактивов Shiny, но не являются локальными переменными R.
+- Производные по соединению: `total_bytes`, `bytes_per_sec`, `pkt_ratio`, `history_length`.
+- Оконные агрегаты по `(src_ip, bucket)` где `bucket = floor(ts / window_seconds)`.
+- Заполнение пропусков константами из `FEATURE_DEFAULTS`.
 
-Файл не содержит исполняемой логики конвейера.
+### Стадия `train`
 
----
+- Split 80/20 (`rsample::initial_split`).
+- Recipe: медианная импутация числовых, `string2factor` + `step_novel` для категорий.
+- `isotree::isolation.forest` на baked-признаках.
+- Порог аномалии = квантиль `threshold_quant` скоров на валидации.
 
-### config.R
+### Стадия `detect`
 
-**Назначение:** единая точка конфигурации путей и гиперпараметров.
-
-#### Функции
-
-
-| Функция                        | Экспорт  | Описание                                                                                              |
-| ------------------------------ | -------- | ----------------------------------------------------------------------------------------------------- |
-| `init_ids_config(root = NULL)` | да       | Инициализирует `PROJECT_ROOT`, `PATHS`, `MODEL_PARAMS`, `DETECT_PARAMS`, `ZEEK_BIN`; создаёт каталоги |
-| `.pkg_assign(name, value, ns)` | internal | Безопасная перезапись привязки в namespace (разблокировка locked binding)                             |
-| `.default_project_root()`      | internal | Чтение env или `getwd()`                                                                              |
-
-
-#### Логика `init_ids_config`
-
-1. Нормализует `root`.
-2. Ищет `block_ip.sh` в `system.file("scripts", ...)` пакета, иначе в `root/scripts/`.
-3. Собирает список `paths`, создаёт директории `*_dir`.
-4. Записывает константы в `asNamespace("idsAiIstd")`.
-5. Возвращает невидимый список с теми же полями (удобно для отладки).
+1. Bake признаков по сохранённому recipe.
+2. `anomaly_score`, флаг `is_anomaly` (score > threshold).
+3. Запись `scored.parquet`.
+4. Подмножество аномалий → `classify_attacks()` → `.refine_alerts()` → `send_alerts()` (JSONL).
 
 ---
 
-### utils.R
+## Конфигурация и переменные
 
-**Назначение:** логирование, безопасная арифметика, чтение Zeek TSV, вспомогательные операции с колонками.
-
-#### Оператор и логирование
-
-
-| Имя                                            | Тип      | Описание                                   |
-| ---------------------------------------------- | -------- | ------------------------------------------ |
-| `%                                             |          | %`                                         |
-| `log_msg`, `log_info`, `log_warn`, `log_error` | internal | Печать в stdout с меткой времени и уровнем |
-
-
-#### Экспортируемые функции
-
-
-| Функция                    | Описание                                      |
-| -------------------------- | --------------------------------------------- |
-| `safe_num(x)`              | `as.numeric` с заменой NA/Inf на 0            |
-| `safe_max(x, default = 0)` | `max` по конечным значениям или `default`     |
-| `shannon_entropy(s)`       | Энтропия Шеннона строки (биты); пустая/NA → 0 |
-| `shannon_entropy_v(strs)`  | Векторизованная энтропия для вектора строк    |
-
-
-#### Внутренние функции
-
-
-| Функция                          | Описание                                                                                                       |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `read_zeek_tsv(path)`            | Парсинг Zeek ASCII log: строки `#fields` → имена колонок; данные через `fread`; NA = `-`, `(empty)`, `(unset)` |
-| `safe_col(dt, name, default, n)` | Колонка `name` или вектор `default` длины `n`                                                                  |
-| `load_rds_or_null(path)`         | `readRDS` если файл есть, иначе `NULL`                                                                         |
-
-
----
-
-### data-collection.R
-
-**Назначение:** ETL — PCAP → Zeek → объединённые таблицы → `dataset.parquet`.
-
-#### Внутренние функции
-
-
-| Функция                   | Описание                                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `run_zeek(pcap_path)`     | Запуск Zeek `-r <pcap>` в изолированной директории-кэше; маркер `.done`; timeout 600 с через `processx::run` |
-| `load_conn(zeek_dir)`     | `conn.log` → data.table с нормализованными IP/портами и числовыми полями                                     |
-| `enrich_dns(zeek_dir)`    | Агрегат DNS-метрик по `uid`                                                                                  |
-| `enrich_http(zeek_dir)`   | Агрегат HTTP-метрик по `uid`                                                                                 |
-| `enrich_ssl(zeek_dir)`    | Агрегат SSL/SNI по `uid`                                                                                     |
-| `join_uid(conn, aux)`     | Left join вспомогательной таблицы по `uid` через data.table syntax `conn[aux, on = "uid"]`                   |
-| `process_pcap(pcap_path)` | Полный цикл для одного файла + колонка `source_file`                                                         |
-
-
-#### Экспорт
-
-
-| Функция                       | Описание                                                                                                              |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `run_etl(pcap_dir, out_path)` | Обработка всех PCAP в каталоге; ошибки по файлам логируются, не останавливают весь ETL; `rbindlist` → `write_parquet` |
-
-
-#### Важные поля после ETL (conn + enrichments)
-
-
-| Поле                                                         | Источник | Смысл                              |
-| ------------------------------------------------------------ | -------- | ---------------------------------- |
-| `uid`                                                        | Zeek     | Идентификатор сессии для join      |
-| `ts`                                                         | conn     | Временная метка (Unix)             |
-| `src_ip`, `dst_ip`, `src_port`, `dst_port`                   | conn     | Конечные точки                     |
-| `duration`, `orig_bytes`, `resp_bytes`, ...                  | conn     | Статистика соединения              |
-| `proto`, `service`, `conn_state`, `history`                  | conn     | Протокол и состояние               |
-| `query_`*, `num_labels`                                      | dns      | Признаки DNS (если был DNS на uid) |
-| `uri_length`, `ua_length`, `http_status_code`, `http_method` | http     | HTTP-признаки                      |
-| `ssl_sni_length`, `ssl_sni_entropy`                          | ssl      | TLS SNI                            |
-| `source_file`                                                | код      | Имя исходного PCAP                 |
-
-
----
-
-### feature-engineering.R
-
-**Назначение:** построение признаков для обучения и детектирования.
-
-#### Константы
-
-См. раздел [3.6](#36-признаки-feature-engineeringr): `FEATURE_DEFAULTS`, `NUM_FEATURES`, `CAT_FEATURES`.
-
-#### Внутренние функции
-
-
-| Функция                        | Описание                                                                         |
-| ------------------------------ | -------------------------------------------------------------------------------- |
-| `add_conn_features(dt)`        | `total_bytes`, `bytes_per_sec`, `pkt_ratio`, `history_length`                    |
-| `add_window_features(dt, win)` | Агрегаты по `(src_ip, bucket)`; join обратно в `dt`; удаление временной `bucket` |
-| `fill_defaults(dt)`            | Числовые — из `FEATURE_DEFAULTS`; категориальные — `"unknown"`                   |
-
-
-#### Производные признаки окна
-
-
-| Признак              | Формула / смысл                                                         |
-| -------------------- | ----------------------------------------------------------------------- |
-| `conn_count_5min`    | Число соединений от `src_ip` в окне                                     |
-| `dest_port_distinct` | Число уникальных `dst_port`                                             |
-| `unique_dst_ip`      | Число уникальных `dst_ip`                                               |
-| `bytes_5min`         | Сумма `total_bytes` в окне                                              |
-| `data_volume_change` | % изменение `bytes_5min` относительно предыдущего окна того же `src_ip` |
-
-
-#### Экспорт
-
-
-| Функция                             | Описание                                                     |
-| ----------------------------------- | ------------------------------------------------------------ |
-| `build_features(in_path, out_path)` | Читает dataset, применяет три шага, пишет `features.parquet` |
-
-
----
-
-### ml-training.R
-
-**Назначение:** обучение Isolation Forest с препроцессингом tidymodels.
-
-#### Экспорт
-
-
-| Функция                                               | Описание                          |
-| ----------------------------------------------------- | --------------------------------- |
-| `train_iforest(features_path, model_path, meta_path)` | Полный цикл обучения и сохранения |
-
-
-#### Шаги обучения
-
-1. Отбор колонок `NUM_FEATURES` + `CAT_FEATURES`.
-2. Recipe: медиана для numeric, string→factor, `step_novel` для новых уровней факторов.
-3. `isolation.forest(..., missing_action = "fail")` — пропуски должны быть устранены recipe.
-4. Порог = `quantile(scores_val, 0.99)`.
-
-#### `model_meta.rds` (список)
-
-
-| Поле            | Описание                                                       |
-| --------------- | -------------------------------------------------------------- |
-| `threshold`     | Порог `anomaly_score` для `is_anomaly`                         |
-| `recipe`        | Объект `recipe` после `prep()` — нужен для `bake()` при detect |
-| `features`      | Имена колонок после bake (порядок для модели)                  |
-| `score_summary` | `summary()` скоров на validation                               |
-| `trained_at`    | Время обучения                                                 |
-
-
----
-
-### attack-detection.R
-
-**Назначение:** инференс ML, классификация типов атак, запись алертов.
-
-#### Внутренние функции
-
-
-| Функция                                   | Описание                                                                                     |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `.adaptive_min(x, base, frac, floor_val)` | `max(floor, min(base, ceiling(max(x)*frac)))` — адаптивные пороги под масштаб текущего батча |
-| `.ensure_rule_cols(dt)`                   | Гарантирует наличие колонок для правил с дефолтами из `FEATURE_DEFAULTS`                     |
-
-
-#### Rule-based: `classify_attacks(dt, rules)`
-
-Инициализация: `attack_score = 1`, `attack_type = fallback_type`.
-
-Правила применяются **последовательно**; более ранние жёсткие правила могут быть перезаписаны поздними только если `attack_type` всё ещё `fallback_type` (для большинства правил).
-
-
-| `attack_type`   | Условия (упрощённо)                  | `attack_score` |
-| --------------- | ------------------------------------ | -------------- |
-| `ddos`          | Много conn, мало портов назначения   | 3–4            |
-| `port_scan`     | Много conn и много разных портов     | 2–3            |
-| `exfiltration`  | Большой исходящий объём, малый ответ | 2–3            |
-| `botnet`        | Много уникальных `dst_ip`            | 2–3            |
-| `dos`           | Короткие сессии, высокая частота     | 2–3            |
-| `dns_anomaly`   | Высокая энтропия/длина query         | 2              |
-| `http_anomaly`  | Длинный URI или status ≥ 400         | 2              |
-| `ssl_anomaly`   | Высокая энтропия SNI                 | 2              |
-| `traffic_spike` | `data_volume_change` ≥ `volume_pct`  | 2              |
-| `proxy_tunnel`  | `service` ∈ {`irc`, `socks`}         | 2              |
-| `ml_anomaly`    | Ни одно правило не сработало         | 1              |
-
-
-Алиас: `classify_attack <- classify_attacks`.
-
-#### Экспорт
-
-
-| Функция                                        | Описание                                                                     |
-| ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| `send_alerts(alerts, append)`                  | JSONL в `PATHS$alerts_file`; каждая строка — один alert                      |
-| `detect(features_path, model_path, meta_path)` | Скоринг → `scored.parquet` → фильтр аномалий → классификация → `send_alerts` |
-
-
-#### Поля после `detect`
-
-
-| Поле            | Описание                                            |
-| --------------- | --------------------------------------------------- |
-| `anomaly_score` | Выход Isolation Forest (чем выше, тем «аномальнее») |
-| `is_anomaly`    | Логический флаг выше порога                         |
-| `attack_score`  | 1–4, важность по правилам                           |
-| `attack_type`   | Строковый класс атаки                               |
-
-
----
-
-### pipeline-runner.R
-
-**Назначение:** оркестрация стадий.
-
-#### Константа
+### Инициализация
 
 ```r
-STAGE_MAP <- list(
-  data     = run_etl,
-  features = build_features,
-  train    = train_iforest,
-  detect   = detect
-)
+library(idsAiIstd)
+init_ids_config("/абсолютный/путь/к/корню/проекта")
 ```
 
-#### Экспорт: `run_ids_pipeline(stages, pcap_dir, reset_alerts)`
+Возвращает (невидимо) список с `PROJECT_ROOT`, `PATHS`, `MODEL_PARAMS`, `DETECT_PARAMS`, `ZEEK_BIN`. Те же объекты сохраняются в namespace пакета и доступны внутри функций как `PATHS`, `MODEL_PARAMS` и т.д.
 
+### Переменные окружения
 
-| Аргумент       | По умолчанию | Описание                                              |
-| -------------- | ------------ | ----------------------------------------------------- |
-| `stages`       | все четыре   | Подмножество имён стадий                              |
-| `pcap_dir`     | NULL         | Если задан и стадия `data` — передаётся в `run_etl()` |
-| `reset_alerts` | TRUE         | Перед `detect` очищает `alerts.jsonl`                 |
+| Переменная | Назначение |
+|------------|------------|
+| `IDS_PROJECT_ROOT` | Корень проекта (приоритет для `init_ids_config`) |
+| `IDS_V2_ROOT` | Устаревший алиас того же |
+| `ZEEK_BIN` | Путь к бинарнику Zeek (по умолчанию `"zeek"`) |
+| `INSTALL_SUGGESTS` | `false` — не ставить Shiny/MCP при `install_dependencies.R` |
+| `RSPM` | CRAN-репозиторий (Docker/CI: Posit PM Jammy) |
+| `IDS_MCP_TOOLS` | Путь к `ids_tools.R` для MCP |
 
+### `PATHS` (список путей)
 
-Для каждой стадии: лог начала/времени, `do.call(fn, args)`.
+| Ключ | Путь (относительно `PROJECT_ROOT`) |
+|------|-------------------------------------|
+| `pcap_dir` | `data/pcap` |
+| `pcap_upload_dir` | `data/pcap/uploaded` |
+| `zeek_logs_dir` | `data/zeek_logs` |
+| `processed_dir` | `data/processed` |
+| `models_dir` | `models` |
+| `alerts_dir` | `alerts` |
+| `dataset` | `data/processed/dataset.parquet` |
+| `features` | `data/processed/features.parquet` |
+| `scored` | `data/processed/scored.parquet` |
+| `model_file` | `models/iforest.rds` |
+| `meta_file` | `models/model_meta.rds` |
+| `alerts_file` | `alerts/alerts.jsonl` |
+| `block_script` | `inst/scripts/block_ip.sh` или `scripts/block_ip.sh` |
 
----
+Каталоги с суффиксом `_dir` создаются автоматически при `init_ids_config()`.
 
-### pcap-upload.R
+### `MODEL_PARAMS` (обучение Isolation Forest)
 
-**Назначение:** работа с пользовательскими PCAP в Shiny (безопасные имена, очередь файлов).
+| Параметр | По умолчанию | Описание |
+|----------|--------------|----------|
+| `ntrees` | `200` | Число деревьев |
+| `sample_size` | `256` | Размер подвыборки (ограничивается размером train) |
+| `max_depth` | `100` | Максимальная глубина |
+| `ndim` | `1` | Размерность подпространства |
+| `contamination` | `0.01` | Зарезервировано в конфиге (порог задаётся через квантиль) |
+| `threshold_quant` | `0.995` | Квантиль скоров на validation → порог аномалии |
+| `seed` | `42` | Seed для воспроизводимости |
+| `nthreads` | `detectCores() - 1` | Потоки `isotree` (минимум 1) |
 
-#### Константа
+### `DETECT_PARAMS` (детект и алерты)
 
-`PCAP_NAME_RE <- "\\.(pcap|pcapng)(\\.gz)?$"` — допустимые расширения.
+| Параметр | По умолчанию | Описание |
+|----------|--------------|----------|
+| `window_seconds` | `300` | Длина окна агрегации (5 мин) |
+| `alert_min_score` | `0` | Минимальный `anomaly_score` для алерта |
+| `score_margin` | `0.02` | Алерт только если `score > threshold + margin` |
+| `ml_score_quantile` | `0.80` | Для типа `ml_anomaly` — отсечение по квантилю score среди алертов |
+| `enable_blocking` | `FALSE` | Вызов `block_ip.sh` (заглушка) |
+| `dedup_seconds` | `120` | Дедупликация по `(src_ip, attack_type, floor(ts/dedup))` |
+| `rules` | см. ниже | Пороги rule-based классификатора |
 
-#### Экспорт
+#### `DETECT_PARAMS$rules`
 
+| Ключ | Значение | Использование |
+|------|----------|---------------|
+| `adaptive_frac` | `0.75` | Доля от max в батче для адаптивных порогов |
+| `query_entropy` | `3.0` | DNS: энтропия запроса |
+| `query_length` | `40` | DNS: длина имени |
+| `uri_length` | `150` | HTTP: длина URI |
+| `ssl_entropy` | `3.0` | TLS SNI: энтропия |
+| `volume_pct` | `150` | Рост объёма трафика, % |
+| `fallback_type` | `"ml_anomaly"` | Тип, если правила не сработали |
 
-| Функция                                         | Описание                                                                     |
-| ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| `safe_pcap_filename(name)`                      | `basename`, санитизация символов, добавление `.pcap` при необходимости       |
-| `list_pcaps(dir)`                               | Отсортированный список полных путей в `pcap_upload_dir`                      |
-| `clear_pcaps(dir)`                              | Удаление всех PCAP в каталоге                                                |
-| `save_uploaded_pcaps(files, replace, dest_dir)` | Копирование из `fileInput$datapath`; при коллизии имён — суффикс с timestamp |
+Изменение параметров после загрузки пакета (для продвинутых сценариев):
 
-
----
-
-### dashboard.R
-
-**Назначение:** интерактивный UI на Shiny + bslib + plotly + DT.
-
-#### Внутренние функции
-
-
-| Функция                   | Описание                                    |
-| ------------------------- | ------------------------------------------- |
-| `.check_dashboard_deps()` | Проверка Suggests: shiny, DT, plotly, bslib |
-| `load_scored()`           | Чтение `PATHS$scored` или пустая table      |
-| `load_alerts()`           | Парсинг JSONL в data.table                  |
-
-
-#### Экспорт
-
-
-| Функция                          | Описание                                                          |
-| -------------------------------- | ----------------------------------------------------------------- |
-| `ids_dashboard_app()`            | Возвращает `shiny::shinyApp(ui, server)`                          |
-| `run_dashboard(port, host, ...)` | `runApp` на порту 4321, `host = "0.0.0.0"`, лимит загрузки 500 MB |
-
-
-#### UI-элементы и реактивная логика
-
-
-| ID / реактив                  | Назначение                                                    |
-| ----------------------------- | ------------------------------------------------------------- |
-| `pcap_upload`                 | `fileInput` для PCAP                                          |
-| `replace_pcaps`               | Очистка каталога перед новой загрузкой                        |
-| `run_pipeline`                | Запуск `run_ids_pipeline` в фоне с `sink` лога                |
-| `refresh`                     | Перечитать scored/alerts                                      |
-| `attack_filter`, `score_min`  | Фильтры таблицы и метрик                                      |
-| `rv$scored`, `rv$alerts`      | Реактивное хранилище данных                                   |
-| `filtered_alerts()`           | Применение фильтров                                           |
-| Графики `hist`, `ts`, `topip` | Гистограмма скоров, алерты по времени, топ src_ip             |
-| `alerts_tbl`                  | DT с колонками ts, IP, ports, attack_type, scores, агрегатами |
-
-
-При успешном анализе вызывается `refresh_dashboard()` и обновляется список типов атак в `selectInput`.
-
----
-
-## 6. Публичный API
-
-Экспортируемые функции (см. `NAMESPACE`):
-
-
-| Функция                                                                  | Модуль              |
-| ------------------------------------------------------------------------ | ------------------- |
-| `init_ids_config`                                                        | config              |
-| `run_etl`                                                                | data-collection     |
-| `build_features`                                                         | feature-engineering |
-| `train_iforest`                                                          | ml-training         |
-| `detect`                                                                 | attack-detection    |
-| `classify_attacks`, `classify_attack`                                    | attack-detection    |
-| `send_alerts`                                                            | attack-detection    |
-| `run_ids_pipeline`                                                       | pipeline-runner     |
-| `safe_num`, `safe_max`, `shannon_entropy`                                | utils               |
-| `safe_pcap_filename`, `list_pcaps`, `clear_pcaps`, `save_uploaded_pcaps` | pcap-upload         |
-| `ids_dashboard_app`, `run_dashboard`                                     | dashboard           |
-
-
-Внутренние функции и константы (`run_zeek`, `PATHS`, `STAGE_MAP`, …) доступны только внутри пакета или при явном обращении к namespace в отладке.
+```r
+init_ids_config("/path/to/project")
+ns <- as.environment("package:idsAiIstd")
+ns$DETECT_PARAMS$score_margin <- 0.05
+ns$MODEL_PARAMS$ntrees <- 300L
+```
 
 ---
 
-## 7. Способы запуска
+## Признаки (features)
+
+### Числовые (`NUM_FEATURES` / `FEATURE_DEFAULTS`)
+
+| Признак | Описание | Default |
+|---------|----------|---------|
+| `duration` | Длительность соединения | 0 |
+| `orig_bytes`, `resp_bytes`, `missed_bytes` | Байты Zeek conn | 0 |
+| `orig_pkts`, `resp_pkts` | Пакеты | 0 |
+| `total_bytes` | orig + resp | 0 |
+| `bytes_per_sec` | total_bytes / duration | 0 |
+| `pkt_ratio` | orig_pkts / resp_pkts | 0 |
+| `history_length` | Длина поля history | 0 |
+| `uri_length`, `ua_length`, `http_status_code` | HTTP | 0 |
+| `query_length`, `query_entropy`, `num_labels` | DNS | 0 |
+| `ssl_sni_length`, `ssl_sni_entropy` | TLS SNI | 0 |
+| `conn_count_5min` | Число соединений src в окне | 0 |
+| `dest_port_distinct` | Уникальные порты назначения в окне | 0 |
+| `unique_dst_ip` | Уникальные IP назначения в окне | 0 |
+| `bytes_5min` | Сумма bytes в окне | 0 |
+| `data_volume_change` | % изменение bytes к предыдущему окну | 0 |
+
+### Категориальные (`CAT_FEATURES`)
+
+- `proto`, `service`, `conn_state` — пустые/NA → `"unknown"`.
+
+### Поля из Zeek (в `dataset.parquet`)
+
+Типичные колонки после ETL: `ts`, `uid`, `src_ip`, `src_port`, `dst_ip`, `dst_port`, `proto`, `service`, `conn_state`, `history`, поля обогащения DNS/HTTP/SSL, `source_file`.
+
+---
+
+## Модель и детектирование
+
+### Isolation Forest
+
+- Библиотека: **`isotree`**.
+- Препроцессинг: **`recipes`** (импутация, факторизация, обработка новых уровней).
+- В `model_meta.rds`: `threshold`, `recipe`, `features` (имена колонок после bake), `score_summary`, `trained_at`.
+
+### Порог и скоринг
+
+- `anomaly_score` — выход `predict(..., type = "score")` (чем выше, тем аномальнее).
+- `is_anomaly = (anomaly_score > threshold)`.
+
+### Уточнение алертов (`.refine_alerts`)
+
+1. Отсечение по `threshold + score_margin`.
+2. Фильтр `alert_min_score`.
+3. Для `ml_anomaly`: оставить только с score ≥ квантиля `ml_score_quantile` среди текущих алертов.
+4. Дедупликация: одна запись на `(src_ip, attack_type, bucket)` с максимальным score.
+
+### Блокировка IP
+
+При `DETECT_PARAMS$enable_blocking = TRUE` может вызываться `scripts/block_ip.sh` (сейчас **заглушка** — запись в `alerts/blocks.log`). Для продакшена раскомментируйте `iptables` / `pfctl` в скрипте.
+
+---
+
+## Типы атак и правила
+
+Классификатор `classify_attacks()` сначала применяет **строгие** правила, затем **адаптивные** (пороги от `.adaptive_min()`), затем правила по DNS/HTTP/SSL/трафику. Приоритет: более специфичный тип не перезаписывается, если уже назначен не-fallback тип.
+
+| `attack_type` | Метка | Краткое правило (строгое) |
+|---------------|-------|---------------------------|
+| `ddos` | DDoS | `conn_count_5min ≥ 500` и `dest_port_distinct ≤ 5` |
+| `port_scan` | Сканирование портов | `conn_count_5min ≥ 100` и `dest_port_distinct ≥ 50` |
+| `exfiltration` | Эксфильтрация | `conn_count_5min ≥ 300`, `orig_bytes > 1e5`, `resp_bytes < 1e3` |
+| `botnet` | Ботнет / C2 | `conn_count_5min ≥ 200`, `unique_dst_ip ≥ 20` |
+| `dos` | DoS | `conn_count_5min ≥ 400`, `duration < 0.1` |
+| `dns_anomaly` | Аномалия DNS | `query_entropy` или `query_length` ≥ порога |
+| `http_anomaly` | Аномалия HTTP | `uri_length` или `http_status_code ≥ 400` |
+| `ssl_anomaly` | Аномалия TLS/SNI | `ssl_sni_entropy` и длина SNI ≥ 8 |
+| `traffic_spike` | Всплеск трафика | `data_volume_change ≥ volume_pct` |
+| `proxy_tunnel` | Прокси / туннель | `service` ∈ `{irc, socks}` |
+| `ml_anomaly` | ML-аномалия | Только высокий ML-score, правила не сработали |
+
+Подробные описания и текст для дашборда: `get_attack_meta()`, `explain_alert()` в `R/attack-catalog.R`.
+
+### Полный порядок правил в `classify_attacks()`
+
+1. Инициализация: `attack_score = 1`, `attack_type = fallback_type`.
+2. **Строгие** (score 3–4): `ddos`, `port_scan`, `exfiltration`, `botnet`, `dos` — фиксированные пороги из таблицы выше.
+3. **Адаптивные** (score 2–3): те же типы с `thr_conn`, `thr_ports`, `thr_dst` от `.adaptive_min()`.
+4. **Прикладные** (score 2): `dns_anomaly`, `http_anomaly`, `ssl_anomaly`, `traffic_spike` (два варианта), доп. `port_scan`, `proxy_tunnel` по `service`.
+5. Всё, что осталось с `fallback_type`, остаётся **`ml_anomaly`** до вызова `explain_alert()` (там описывается только ML-порог).
+
+Условие «не перезаписывать» везде одинаковое: `attack_type == rules$fallback_type` (кроме первых строгих правил, которые задают тип напрямую).
+
+---
+
+## Форматы данных
+
+### `dataset.parquet` / `features.parquet` / `scored.parquet`
+
+Apache Parquet через пакет **`arrow`**. `scored.parquet` содержит все строки features плюс `anomaly_score`, `is_anomaly`, после detect — также `attack_type`, `attack_score` для аномальных сессий.
+
+### `alerts.jsonl`
+
+Одна JSON-строка на алерт (поля строки `data.table` после классификации): например `ts`, `src_ip`, `dst_ip`, `attack_type`, `anomaly_score`, `attack_score`, признаки окна и протокола.
+
+### Кэш Zeek
+
+`data/zeek_logs/<md5_pcap>/` — логи и файл `.done`.
+
+---
+
+## Детали ETL и логи Zeek
+
+### Чтение TSV (`read_zeek_tsv`)
+
+Парсер в `R/utils.R` читает Zeek ASCII-логи построчно:
+
+- Строки `#fields` задают имена колонок (табуляция).
+- Строки `#…` (кроме `#fields`) пропускаются.
+- Значения `-`, `(empty)`, `(unset)` → `NA` в `data.table::fread`.
+- Пустой файл или несовпадение числа колонок → `NULL` (обогащение пропускается).
+
+### Маппинг `conn.log`
+
+| Поле Zeek | Поле в dataset |
+|-----------|----------------|
+| `id.orig_h` | `src_ip` |
+| `id.orig_p` | `src_port` |
+| `id.resp_h` | `dst_ip` |
+| `id.resp_p` | `dst_port` |
+
+Числовые поля приводятся через `safe_num()` (NA/Inf → 0): `ts`, `duration`, байты и пакеты, порты.
+
+### Обогащение по `uid`
+
+| Лог | Вычисляемые поля | Агрегация по uid |
+|-----|------------------|------------------|
+| `dns.log` | `query_length`, `query_entropy`, `num_labels` | max по сессии |
+| `http.log` | `uri_length`, `ua_length`, `http_status_code`, `http_method` | max / first |
+| `ssl.log` | `ssl_sni_length`, `ssl_sni_entropy` | max |
+
+`query_entropy` и `ssl_sni_entropy` — энтропия Шеннона по символам строки (`shannon_entropy()`), биты на символ.
+
+Джойн: `conn[aux, on = "uid"]` — если для uid нет DNS/HTTP/SSL, соответствующие колонки остаются пустыми и позже заполняются нулями на стадии features.
+
+### Команда Zeek
+
+```text
+zeek -r <pcap> LogAscii::use_json=F
+```
+
+Рабочая директория процесса — каталог кэша; таймаут **600 с** на файл. Переопределение бинарника: `Sys.setenv(ZEEK_BIN = "/opt/zeek/bin/zeek")` до `init_ids_config()` или в Docker `ENV ZEEK_BIN=…`.
+
+---
+
+## Адаптивные пороги и attack_score
+
+### Функция `.adaptive_min(x, base, frac, floor_val)`
+
+Для вектора признака `x` в текущем батче:
+
+1. `m = max(x)` (игнорируя NA/Inf).
+2. Если `m` не положителен → возвращается `floor_val` (по умолчанию 2).
+3. Иначе `max(floor_val, min(base, ceiling(m * adaptive_frac)))`.
+
+Пример: при `conn_count_5min` max = 40 в PCAP, `base = 500`, `frac = 0.75` → порог `thr_conn = 30`. Тогда адаптивное правило DDoS может сработать при `conn_count_5min ≥ 30` и `dest_port_distinct ≤ 3`, хотя строгое правило требует 500.
+
+### Уровни `attack_score`
+
+| Score | Смысл |
+|-------|--------|
+| `1` | Только fallback `ml_anomaly` (правила не меняли тип) |
+| `2` | Сработало адаптивное или «мягкое» правило (DNS/HTTP/SSL/spike/scan и т.д.) |
+| `3` | Сработало строгое правило (высокие пороги conn/ports/bytes) |
+| `4` | Строгий DDoS (conn ≥ 500, ports ≤ 5) |
+
+Правила применяются **последовательно** в `classify_attacks()`; тип с уже назначенным не-`fallback_type` не перезаписывается более слабым правилом.
+
+---
+
+## Типовые сценарии запуска
+
+| Задача | Команда / вызов |
+|--------|-----------------|
+| Полный цикл с нуля | `run_ids_pipeline()` |
+| Только новые PCAP (Zeek) | `run_ids_pipeline(stages = "data")` затем `features`, `train`, `detect` |
+| Пересчёт признаков без Zeek | `run_ids_pipeline(stages = c("features", "train", "detect"))` |
+| Скоринг без переобучения | `run_ids_pipeline(stages = "detect", reset_alerts = TRUE)` |
+| PCAP из дашборда | `run_ids_pipeline(pcap_dir = PATHS$pcap_upload_dir)` |
+| Импорт своих файлов | `bash scripts/import_pcaps.sh ./captures/*.pcap` → `Rscript run_pipeline.R --pcap-dir data/pcap/uploaded` |
+| Добавить PCAP без замены upload | `save_uploaded_pcaps(files, replace = FALSE)` в Shiny, затем анализ |
+| Не очищать старые алерты | `run_ids_pipeline(stages = "detect", reset_alerts = FALSE)` + `send_alerts(append = TRUE)` внутри кастомного скрипта |
+
+После смены состава PCAP в `data/pcap/` рекомендуется прогонять **все четыре стадии**: Isolation Forest переобучается на новом распределении признаков, порог в `model_meta.rds` пересчитывается.
+
+---
+
+## Примеры артефактов
+
+### `model_meta.rds` (список)
+
+```r
+meta <- readRDS("models/model_meta.rds")
+str(meta, max.level = 1)
+# List of 5
+#  $ threshold     : num 0.62
+#  $ recipe        : recipe [trained]
+#  $ features      : chr [1:28] "duration" "orig_bytes" ...
+#  $ score_summary : Summary of scores on validation split
+#  $ trained_at    : POSIXct
+```
+
+Порог — квантиль `MODEL_PARAMS$threshold_quant` (0.995) по скорам на **validation** после split 80/20.
+
+### Строка `alerts.jsonl` (пример)
+
+```json
+{"ts":1704067200,"src_ip":"192.168.1.50","src_port":54321,"dst_ip":"10.0.0.1","dst_port":80,"proto":"tcp","anomaly_score":0.71,"is_anomaly":true,"attack_type":"port_scan","attack_score":3,"conn_count_5min":120,"dest_port_distinct":55,"unique_dst_ip":2}
+```
+
+Поля зависят от наличия колонок в `features`; в дашборде для объяснения вызывается `explain_alert(row)` → `attack_label`, `rule_text`, `why`, `metrics`.
+
+---
+
+## Дашборд: интерфейс и REPL
+
+### Боковая панель
+
+- **Загрузка PCAP** — `fileInput` (до 500 MB), чекбокс «Заменить ранее загруженные», кнопка «Запустить анализ» (фоновый `run_ids_pipeline` с `pcap_upload_dir`, вывод в консоль UI).
+- **Лог пайплайна** — фильтр «только ошибки», очистка, скачивание `.log`.
+- **R консоль** — изолированное окружение: объекты `scored`, `alerts`, `model_meta`, `model_threshold`; Ctrl+Enter для выполнения. Запрещены: `system`, `setwd`, `install.packages`, `unlink`, `quit` и др. (см. `R/dashboard-repl.R`).
+- **MCP** — подсказка по подключению `cursor-mcp.json`.
+- Фильтры: тип атаки (multiselect), минимальный `anomaly_score`.
+
+### Основная область
+
+- **Value boxes**: число сессий в `scored.parquet`, аномалий (`is_anomaly`), алертов в JSONL, уникальных `src_ip`.
+- **Графики plotly**: гистограмма score, аномалии/атаки по времени, mix типов, топ `src_ip` по числу алертов.
+- **Алерты**: вкладка «Карточки» (клик → детали с правилом и метриками) и «Таблица» (DT с сортировкой).
+
+Тема UI: Bootswatch `flatly` (`bslib`).
+
+---
+
+## Логирование и отладка
+
+Формат сообщений конвейера (`log_info`, `log_warn`, `log_error`):
+
+```text
+[2026-05-16 12:00:00] INFO  ETL: 4 PCAPs
+[2026-05-16 12:00:05] INFO  Zeek run: web.pcap
+[2026-05-16 12:00:10] ERROR Failed bad.pcap: Zeek failed on bad.pcap: ...
+```
+
+Стадии пайплайна обрамляются:
+
+```text
+==== STAGE: DATA ====
+==== DATA done in 12.34s ====
+```
+
+В Shiny этот вывод перехватывается в `rv$pipeline_log` и отображается в консоли с подсветкой (ERROR — красный, STAGE — синий).
+
+Полезные проверки в R REPL дашборда:
+
+```r
+nrow(scored); sum(scored$is_anomaly, na.rm = TRUE)
+table(alerts$attack_type)
+model_meta$threshold
+```
+
+---
+
+## Устранение неполадок
+
+| Симптом | Возможная причина | Что сделать |
+|---------|-------------------|-------------|
+| `No PCAPs in: ...` | Пустой `data/pcap/` | Положить `.pcap` или `bash scripts/download_sample_pcaps.sh` |
+| `Zeek failed on ...` | Битый PCAP, нет Zeek | `which zeek`, проверить файл в Wireshark/tshark |
+| `dataset not found` | Пропущена стадия `data` | `run_ids_pipeline(stages = c("data", "features", ...))` |
+| `model not found` | Нет `train` | Запустить `train` или полный пайплайн |
+| `Features not found` | Нет `features` | Запустить `build_features()` |
+| Пустой дашборд после анализа | Не нажали «Обновить» / нет `scored.parquet` | Кнопка «Обновить дашборд» или перезапуск `run_dashboard` |
+| Слишком много `ml_anomaly` | Правила не подходят к трафику | Подстроить `DETECT_PARAMS$rules` или снизить `ml_score_quantile` |
+| Нет алертов при многих аномалиях | Жёсткий `score_margin` / dedup | Уменьшить `score_margin`, увеличить `dedup_seconds` |
+| MCP не стартует | Нет `mcptools`/`ellmer` | `install.packages(c("mcptools", "ellmer"))` |
+| Пакет не видит пути | Неверный корень | Явный `init_ids_config("/abs/path")` или `IDS_PROJECT_ROOT` |
+
+Проверка Zeek в терминале:
+
+```bash
+zeek -r data/pcap/web.pcap
+ls conn.log
+```
+
+---
+
+## Установка
+
+### Требования
+
+- **R** ≥ 4.2
+- **Zeek** в PATH ([установка](https://docs.zeek.org/en/master/install.html))
+- Для дашборда: Suggests-пакеты `shiny`, `DT`, `plotly`, `bslib`
+- Для MCP: `mcptools`, `ellmer`
+
+### Из GitHub
+
+```r
+install.packages("remotes")
+remotes::install_github("ZWIYS/IDS_AI-ISTD")
+```
+
+### Локальная разработка
+
+```r
+install.packages("pkgload")
+pkgload::load_all("/path/to/IDS_AI-ISTD")
+```
+
+### Зависимости (скрипт)
+
+```bash
+Rscript install_dependencies.R
+# Без Shiny/MCP (как в CI):
+INSTALL_SUGGESTS=false Rscript install_dependencies.R
+```
+
+### Тестовые PCAP
+
+```bash
+bash scripts/download_sample_pcaps.sh
+```
+
+Копирует образцы из установки Zeek (web, dns, irc, socks) в `data/pcap/`.
+
+---
+
+## Быстрый старт
+
+```r
+library(idsAiIstd)
+
+# Корень — каталог с data/, models/, alerts/
+init_ids_config("/path/to/your/project")
+
+# Положите .pcap в data/pcap/
+run_ids_pipeline()
+
+# Дашборд
+run_dashboard(port = 4321)
+```
+
+Откройте в браузере: `http://127.0.0.1:4321`
+
+См. также [quick_start.md](quick_start.md).
+
+---
+
+## CLI и Docker
 
 ### CLI
 
 ```bash
+export IDS_PROJECT_ROOT=/path/to/project
+cd /path/to/project
 Rscript run_pipeline.R
 Rscript run_pipeline.R --pcap-dir data/pcap/uploaded
-Rscript run_pipeline.R data features train detect
+Rscript run_pipeline.R data features    # только указанные стадии
 ```
 
-Переменная окружения перед запуском:
+### Docker (образ GHCR)
 
 ```bash
-export IDS_PROJECT_ROOT=/path/to/project
+docker run --rm -it -p 4321:4321 \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/models:/app/models" \
+  -v "$(pwd)/alerts:/app/alerts" \
+  ghcr.io/zwiys/ids_ai-istd:<TAG> \
+  bash -c "bash scripts/download_sample_pcaps.sh && \
+    Rscript run_pipeline.R && \
+    Rscript -e \"idsAiIstd::run_dashboard(port=4321, host='0.0.0.0')\""
 ```
 
-### R (интерактивно)
+### docker-compose
 
-```r
-library(idsAiIstd)
-init_ids_config("/path/to/project")
-run_ids_pipeline(stages = c("data", "features", "train", "detect"))
-```
+- **`pipeline`** — `Rscript run_pipeline.R`
+- **`dashboard`** — порт `4321`, тома `data`, `models`, `alerts`
 
-### Дашборд
-
-```r
-idsAiIstd::run_dashboard(port = 4321, host = "0.0.0.0")
-```
-
-### Docker Compose
-
-- Сервис `pipeline`: `Rscript run_pipeline.R`
-- Сервис `dashboard`: порт **4321**, тома `data`, `models`, `alerts`
+Образ: `rocker/r-ver:4.3.2`, Zeek из OpenSUSE repo, `ZEEK_BIN=/opt/zeek/bin/zeek`.
 
 ---
 
-## 8. Зависимости
+## Shiny-дашборд
+
+`run_dashboard(port = 4321, host = "0.0.0.0")` запускает `ids_dashboard_app()`:
+
+- Загрузка PCAP → `data/pcap/uploaded`, запуск конвейера с логом в UI.
+- Вкладки: обзор скоринга, алерты (карточки + `explain_alert`), таблицы, графики plotly.
+- Встроенная **R REPL** с ограничениями (запрещены `system`, `setwd`, установка пакетов и т.д.); в окружении доступны `scored`, `alerts`, `model_meta`.
+- Лимит загрузки: 500 MB (`shiny.maxRequestSize`).
+
+Зависимости дашборда не обязательны для batch-конвейера (только Suggests).
+
+---
+
+## MCP-сервер
+
+Интеграция с Cursor / AI через [mcptools](https://github.com/posit-dev/mcptools) (stdio).
+
+### Настройка Cursor
+
+Скопируйте и отредактируйте [inst/mcp/cursor-mcp.json.example](inst/mcp/cursor-mcp.json.example):
+
+```json
+{
+  "mcpServers": {
+    "ids-ai-istd": {
+      "command": "Rscript",
+      "args": ["/ABSOLUTE/PATH/TO/IDS_AI-ISTD/inst/mcp/ids_mcp_server.R"],
+      "env": {
+        "IDS_PROJECT_ROOT": "/ABSOLUTE/PATH/TO/IDS_AI-ISTD"
+      }
+    }
+  }
+}
+```
+
+### Инструменты MCP
+
+| Tool | Описание |
+|------|----------|
+| `ids_status` | Сессии, число алертов, порог модели, пути |
+| `ids_run_pipeline` | Полный или частичный конвейер (PCAP из `uploaded`) |
+| `ids_detect` | Только стадия detect |
+| `ids_list_alerts` | Последние N алертов из JSONL |
+| `ids_explain_alert` | Пояснение по индексу строки в alerts |
+
+Запуск из R: `run_ids_mcp_server(root = "/path/to/project")`.
+
+---
+
+## Публичный API пакета
+
+Экспортируемые функции (`NAMESPACE`):
+
+| Функция | Назначение |
+|---------|------------|
+| `init_ids_config` | Инициализация путей и параметров |
+| `run_ids_pipeline` | Оркестратор стадий |
+| `run_etl` | Zeek + dataset |
+| `build_features` | Признаки |
+| `train_iforest` | Обучение модели |
+| `detect` | Скоринг и алерты |
+| `classify_attack` / `classify_attacks` | Rule-based тип |
+| `send_alerts` | Запись JSONL |
+| `run_dashboard` | Shiny |
+| `ids_dashboard_app` | Объект приложения |
+| `list_pcaps`, `clear_pcaps`, `save_uploaded_pcaps`, `safe_pcap_filename` | PCAP в UI |
+| `run_ids_mcp_server` | MCP stdio |
+| `safe_num`, `safe_max`, `shannon_entropy` | Утилиты |
+
+Внутренние (не экспорт): `explain_alert`, `get_attack_meta`, `read_zeek_tsv`, логирование `log_info` / `log_warn` / `log_error`.
+
+---
+
+## Тестирование и CI
+
+```bash
+Rscript -e "testthat::test_dir('tests/testthat')"
+```
+
+Тесты: конфиг, каталог атак, классификация, `refine_alerts`, утилиты.
+
+**GitHub Actions** (`.github/workflows/ci.yml`):
+
+- Ubuntu, R 4.3.2, `setup-r-dependencies` (только Imports, без Shiny).
+- Отдельный workflow `docker.yml` для сборки образа.
+
+---
+
+## Зависимости
 
 ### Imports (обязательные)
 
+`data.table`, `arrow`, `digest`, `processx`, `jsonlite`, `stringi`, `isotree`, `recipes`, `rsample`, `stats`, `utils`
 
-| Пакет                | Роль в проекте                                  |
-| -------------------- | ----------------------------------------------- |
-| `data.table`         | Высокопроизводительные таблицы, join, агрегации |
-| `arrow`              | Parquet I/O                                     |
-| `digest`             | MD5-ключ кэша Zeek                              |
-| `processx`           | Запуск Zeek как subprocess                      |
-| `jsonlite`           | Сериализация алертов                            |
-| `stringi`            | Подсчёт меток в DNS query                       |
-| `isotree`            | Isolation Forest                                |
-| `recipes`, `rsample` | Препроцессинг и split                           |
+### Suggests
 
+`shiny`, `DT`, `plotly`, `bslib`, `mcptools`, `ellmer`, `testthat`
 
-### Suggests (дашборд и тесты)
+### Системные
 
-`shiny`, `DT`, `plotly`, `bslib`, `testthat`
-
-### Внешние бинарники
-
-- **Zeek** — должен быть в `PATH` или задан через `ZEEK_BIN`.
+- **Zeek** — парсинг PCAP
+- **bash** — скрипты PCAP/block (Docker/Linux)
 
 ---
 
-## Связь файлов (краткая схема)
+## Рекомендуемые датасеты
 
-```
-idsAiIstd-package.R  →  .onLoad → config.R
-run_pipeline.R / dashboard.R  →  pipeline-runner.R
-pipeline-runner.R  →  data-collection → feature-engineering → ml-training → attack-detection
-dashboard.R  →  pcap-upload.R + pipeline-runner.R
-Все модули  →  utils.R, config (PATHS, PARAMS)
-aaa.R  →  только NSE для check
-```
+Для обучения и оценки на реальном IoT-трафике (вне репозитория):
+
+- [IoT-23](https://www.stratosphereips.org/datasets-iot23)
+- [CIC-IDS 2017](https://www.unb.ca/cic/datasets/ids-2017.html)
+- [BoT-IoT](https://research.unsw.edu.au/projects/bot-iot-dataset)
+
+Импорт: положите PCAP в `data/pcap/` или используйте `scripts/import_pcaps.sh`.
+
 

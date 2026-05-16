@@ -61,6 +61,16 @@
   ```
   или любой удобный вам порт
 
+6*. Запуск docker контейнера
+```
+docker run --rm -it -p 4321:4321 \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/models:/app/models" \
+  -v "$(pwd)/alerts:/app/alerts" \
+  ghcr.io/zwiys/ids_ai-istd:<АКТУАЛЬНЫЙ ТЕГ> \
+  bash -c "bash scripts/download_sample_pcaps.sh && Rscript run_pipeline.R && Rscript -e \"shiny::runApp('R/05_dashboard.R', port=4321, host='0.0.0.0')\""
+```
+
 ## 1. Общая архитектура
 
 Проект оформлен как R-пакет `idsAiIstd`. Весь исполняемый код конвейера сосредоточен в каталоге `R/`. Точки входа снаружи пакета:
